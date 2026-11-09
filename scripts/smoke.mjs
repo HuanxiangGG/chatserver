@@ -2,12 +2,12 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { io } from 'socket.io-client';
 const base = process.env.SMOKE_URL || 'http://localhost:8080';
-const origin = new URL(base).origin;
+const origin = process.env.SMOKE_ORIGIN || new URL(base).origin;
 const prefix = `smoke_${randomBytes(5).toString('hex')}`;
 const password = randomBytes(24).toString('hex');
 async function call(path, method = 'GET', body, account) {
   const response = await fetch(`${base}/api${path}`, {
-    method, headers: { Origin: origin, 'Content-Type': 'application/json', ...(account ? { Cookie: account.cookie, 'X-CSRF-Token': account.csrfToken } : {}) },
+    method, headers: { Origin: origin, 'X-Forwarded-Proto': 'https', 'Content-Type': 'application/json', ...(account ? { Cookie: account.cookie, 'X-CSRF-Token': account.csrfToken } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`Acceptance request ${method} ${path} returned ${response.status}`);

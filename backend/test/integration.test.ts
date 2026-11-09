@@ -13,10 +13,10 @@ if (!db || !new URL(db).pathname.endsWith('_test') || !cache || new URL(cache).p
 process.env.DATABASE_URL = db;
 process.env.REDIS_URL = cache;
 process.env.NODE_ENV = 'test';
-process.env.APP_ORIGIN = 'http://localhost:5173';
+process.env.APP_ORIGIN = ' https://CHAT.6HX9.COM/, https://second.example ';
 process.env.COOKIE_SECURE = 'false';
-process.env.TRUST_PROXY = '0';
-const origin = 'http://localhost:5173';
+process.env.TRUST_PROXY = '2';
+const origin = 'https://chat.6hx9.com';
 const password = 'TestOnly-Harbor-9347!';
 const prefix = `t${Date.now().toString(36)}`;
 let app: any, prisma: any, redis: any, realtime: any, server: ReturnType<typeof createServer>, base: string;

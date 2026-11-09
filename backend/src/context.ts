@@ -5,11 +5,12 @@ import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { z } from 'zod';
+import { normalizeOrigin, parseOrigins } from './origin.js';
 
 dotenv({ path: [resolve(process.cwd(), '.env'), resolve(process.cwd(), '../.env')], quiet: true });
 const env = z.object({
   DATABASE_URL: z.string().min(1), REDIS_URL: z.string().min(1),
-  APP_ORIGIN: z.string().default('http://localhost:5173'),
+  APP_ORIGIN: z.string().optional(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   UPLOAD_DIR: z.string().default('./uploads'),
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
@@ -17,7 +18,9 @@ const env = z.object({
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(14),
   NODE_ENV: z.string().default('development'),
 }).parse(process.env);
-const origins = env.APP_ORIGIN.split(',').map(v => new URL(v.trim()).origin);
+const origins = parseOrigins(env.APP_ORIGIN ?? (env.NODE_ENV === 'production' ? undefined : 'http://localhost:5173'), env.NODE_ENV === 'production');
+if (env.NODE_ENV === 'production' && env.COOKIE_SECURE === 'false') throw new Error('服务器配置错误：生产环境必须设置 COOKIE_SECURE=true');
+export const isTrustedOrigin = (origin: string) => { const normalized = normalizeOrigin(origin); return normalized !== null && origins.includes(normalized); };
 export const config = {
   origins, uploadDir: resolve(env.UPLOAD_DIR), cookieName: 'harbor_session',
   port: env.PORT, isProduction: env.NODE_ENV === 'production',
@@ -36,11 +39,11 @@ export function publicUser(user: Pick<User, keyof typeof publicUserSelect>) {
   return { id, username, displayName, avatarUrl, bio, status, lastSeenAt, role };
 }
 export class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: number, message: string, public code = 'REQUEST_ERROR') { super(message); }
 }
 export function validate<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
   const result = schema.safeParse(data);
-  if (!result.success) throw new HttpError(400, result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; '));
+  if (!result.success) throw new HttpError(400, '字段校验失败：' + result.error.issues.map(i => `${({ username: '用户名', email: '邮箱', password: '密码', displayName: '显示名称' } as Record<string, string>)[String(i.path[0])] ?? '输入内容'}：${/[\u4e00-\u9fff]/.test(i.message) ? i.message : '格式或长度不符合要求'}`).join('；'), 'FIELD_INVALID');
   return result.data;
 }
 export function asyncRoute(fn: (req: Request, res: Response, next: NextFunction) => unknown | Promise<unknown>): RequestHandler {
@@ -48,7 +51,7 @@ export function asyncRoute(fn: (req: Request, res: Response, next: NextFunction)
 }
 export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 export async function authenticateToken(token: string | undefined) {
-  if (!token || !/^[a-f0-9]{64}$/.test(token)) throw new HttpError(401, '请先登录');
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) throw new HttpError(401, '未收到会话 Cookie，请先登录；若刚登录，请检查浏览器 Cookie 与 HTTPS 配置', 'COOKIE_MISSING');
   const session = await prisma.session.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: true } });
   if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.banned) throw new HttpError(401, '登录已失效，请重新登录');
   const { user, ...safeSession } = session;
@@ -63,7 +66,7 @@ export const requireAuth: RequestHandler = asyncRoute(async (req, _res, next) =>
   const { user, session } = await authenticateToken(req.cookies?.[config.cookieName]);
   req.user = user; req.session = session;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    if (req.get('X-CSRF-Token') !== session.csrfToken) throw new HttpError(403, 'CSRF 校验失败，请刷新后重试');
+    if (req.get('X-CSRF-Token') !== session.csrfToken) throw new HttpError(403, 'CSRF 校验失败，请刷新页面后重试', 'CSRF_INVALID');
   }
   next();
 });
@@ -73,8 +76,8 @@ export const requireAdmin: RequestHandler = (req, _res, next) => {
 };
 export const checkOrigin: RequestHandler = (req, _res, next) => {
   const origin = req.get('origin');
-  if (origin && !config.origins.includes(origin)) return next(new HttpError(403, '来源不受信任'));
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !origin) return next(new HttpError(403, '写操作必须提供可信 Origin'));
+  if (origin && !isTrustedOrigin(origin)) return next(new HttpError(403, '来源校验失败：当前站点未列入服务器 APP_ORIGIN，请联系管理员核对生产域名', 'ORIGIN_UNTRUSTED'));
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !origin) return next(new HttpError(403, '来源校验失败：写操作缺少 Origin 请求头', 'ORIGIN_MISSING'));
   next();
 };
 export async function assertUnblocked(a: string, b: string) {

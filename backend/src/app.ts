@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { Prisma } from '@prisma/client';
-import { config, prisma, redis, checkOrigin, consumeLimit, asyncRoute, HttpError } from './context.js';
+import { config, isTrustedOrigin, prisma, redis, checkOrigin, consumeLimit, asyncRoute, HttpError } from './context.js';
 import auth from './auth.js';
 import social from './social.js';
 import chat from './chat.js';
@@ -14,7 +14,7 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', config.trustProxy);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
-app.use(cors({ origin(origin, callback) { callback(null, !origin || config.origins.includes(origin)); }, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token'], methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }));
+app.use(cors({ origin(origin, callback) { callback(null, !origin || isTrustedOrigin(origin)); }, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token'], methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }));
 app.use(checkOrigin);
 app.use(express.json({ limit: '128kb' }));
 app.use(cookieParser());
@@ -25,10 +25,14 @@ app.get('/api/health', asyncRoute(async (_req, res) => {
   } catch { res.status(503).json({ status: 'unavailable' }); }
 }));
 app.use('/api', asyncRoute(async (req, _res, next) => { await consumeLimit(`http:${req.ip}`, 600, 60); next(); }));
+app.use('/api', (req, _res, next) => {
+  if (config.cookieSecure && !req.secure) return next(new HttpError(503, '服务器代理配置错误：未识别 HTTPS，请检查 TRUST_PROXY 和 X-Forwarded-Proto', 'PROXY_HTTPS_REQUIRED'));
+  next();
+});
 app.use('/api', auth, chat, uploads, admin, social);
 app.use((_req, res) => res.status(404).json({ error: '接口不存在' }));
 const errors: ErrorRequestHandler = (error, _req, res, _next) => {
-  if (error instanceof HttpError) { res.status(error.status).json({ error: error.message }); return; }
+  if (error instanceof HttpError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     if (error.code === 'P2002') { res.status(409).json({ error: '该用户名、邮箱或记录已存在' }); return; }
     if (error.code === 'P2025') { res.status(404).json({ error: '记录不存在' }); return; }

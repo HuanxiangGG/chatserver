@@ -1,0 +1,10 @@
+# Caddy remains on the host and terminates HTTPS; existing named volumes unchanged.
+services:
+  backend:
+    environment:
+      TRUST_PROXY: ${TRUST_PROXY:-2}
+  nginx:
+    ports: !override
+      - 127.0.0.1:${HTTP_PORT:-8080}:80
+    volumes:
+      - ./nginx/caddy.conf:/etc/nginx/conf.d/default.conf:ro

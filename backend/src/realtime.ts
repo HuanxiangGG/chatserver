@@ -1,3 +1,4 @@
+import { isTrustedOrigin } from './context.js';
 import type { Server as HttpServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { parse } from 'cookie';
@@ -83,8 +84,8 @@ async function eventMembers(conversationId: string, userId: string) {
 }
 
 export async function initRealtime(server: HttpServer) {
-  io = new Server(server, { transports: ['websocket'], maxHttpBufferSize: 16_384, cors: { origin: config.origins, credentials: true },
-    allowRequest: (req, callback) => callback(null, typeof req.headers.origin === 'string' && config.origins.includes(req.headers.origin)) });
+  io = new Server(server, { transports: ['websocket'], maxHttpBufferSize: 16_384, cors: { origin: (origin, cb) => cb(null, !!origin && isTrustedOrigin(origin)), credentials: true },
+    allowRequest: (req, callback) => callback(null, typeof req.headers.origin === 'string' && isTrustedOrigin(req.headers.origin)) });
   publisher = redis.duplicate(); subscriber = redis.duplicate();
   publisher.on('error', () => { /* Health endpoint reports Redis availability. */ });
   subscriber.on('error', () => { /* Do not log connection configuration. */ });
@@ -95,7 +96,7 @@ export async function initRealtime(server: HttpServer) {
   await Promise.all(stale.map(user => updateOffline(user.id)));
   io.use(async (socket, next) => {
     try {
-      if (!config.origins.includes(String(socket.handshake.headers.origin ?? ''))) throw new HttpError(403, '不允许的来源');
+      if (!isTrustedOrigin(String(socket.handshake.headers.origin ?? ''))) throw new HttpError(403, '不允许的来源');
       const token = parse(socket.handshake.headers.cookie ?? '')[config.cookieName];
       if (!token) throw new HttpError(401, '请先登录');
       const auth = await authenticateToken(token);
