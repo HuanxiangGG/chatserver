@@ -1,0 +1,46 @@
+import express, { type ErrorRequestHandler } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import { Prisma } from '@prisma/client';
+import { config, prisma, redis, checkOrigin, consumeLimit, asyncRoute, HttpError } from './context.js';
+import auth from './auth.js';
+import social from './social.js';
+import chat from './chat.js';
+import uploads from './uploads.js';
+import admin from './admin.js';
+
+const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', config.trustProxy);
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
+app.use(cors({ origin(origin, callback) { callback(null, !origin || config.origins.includes(origin)); }, credentials: true, allowedHeaders: ['Content-Type', 'X-CSRF-Token'], methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }));
+app.use(checkOrigin);
+app.use(express.json({ limit: '128kb' }));
+app.use(cookieParser());
+app.get('/api/health', asyncRoute(async (_req, res) => {
+  try {
+    await Promise.all([prisma.$queryRaw`SELECT 1`, redis.ping()]);
+    res.json({ status: 'ok' });
+  } catch { res.status(503).json({ status: 'unavailable' }); }
+}));
+app.use('/api', asyncRoute(async (req, _res, next) => { await consumeLimit(`http:${req.ip}`, 600, 60); next(); }));
+app.use('/api', auth, chat, uploads, admin, social);
+app.use((_req, res) => res.status(404).json({ error: '接口不存在' }));
+const errors: ErrorRequestHandler = (error, _req, res, _next) => {
+  if (error instanceof HttpError) { res.status(error.status).json({ error: error.message }); return; }
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2002') { res.status(409).json({ error: '该用户名、邮箱或记录已存在' }); return; }
+    if (error.code === 'P2025') { res.status(404).json({ error: '记录不存在' }); return; }
+    if (error.code === 'P2003') { res.status(400).json({ error: '关联记录不存在' }); return; }
+  }
+  if (error?.type === 'entity.too.large' || error?.code === 'LIMIT_FILE_SIZE') { res.status(413).json({ error: '上传或请求体过大' }); return; }
+  if (error?.name === 'MulterError') { res.status(400).json({ error: '上传请求无效' }); return; }
+  if (error instanceof SyntaxError && 'body' in error) { res.status(400).json({ error: 'JSON 格式无效' }); return; }
+  // Do not log request bodies, cookies, tokens, database URLs, or raw driver errors.
+  console.error('Request failed: internal server error');
+  res.status(500).json({ error: '服务暂时不可用，请稍后重试' });
+};
+app.use(errors);
+export { app };
+export default app;
