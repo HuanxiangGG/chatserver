@@ -14,11 +14,11 @@ jobs:
           POSTGRES_PASSWORD: ci-only-disposable
           POSTGRES_DB: harbor_test
         ports: ['5432:5432']
-        options: --health-cmd 'pg_isready -U harbor -d harbor_test' --health-interval 5s --health-timeout 5s --health-retries 20
+        options: --health-cmd "pg_isready -U harbor -d harbor_test" --health-interval 5s --health-timeout 5s --health-retries 20
       redis:
         image: redis:7.4-alpine
         ports: ['6379:6379']
-        options: --health-cmd 'redis-cli ping' --health-interval 5s --health-timeout 5s --health-retries 20
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       DATABASE_URL: postgresql://harbor:ci-only-disposable@localhost:5432/harbor_test
       REDIS_URL: redis://localhost:6379/9
@@ -47,4 +47,5 @@ jobs:
           curl --fail http://localhost:8080/ > /dev/null
           docker compose --env-file .env.example exec -T nginx nginx -t
       - if: always()
-        run: docker compose --env-file .env.example down
+        run: |
+          if [ -f .env.example ]; then docker compose --env-file .env.example down; fi
