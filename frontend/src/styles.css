@@ -4828,3 +4828,9 @@ input[aria-invalid="true"] { border-color: var(--danger, #d64252); }
   .auth-form-wrap { margin: 0 auto; }
   .auth-bottom { position: static; margin-top: 0; }
 }
+
+.pending-media { display: flex; gap: 10px; overflow-x: auto; padding: 12px 4px; }
+.pending-media-item { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; width: 230px; padding: 10px; border-radius: 12px; background: var(--soft); }
+.pending-media-item img { width: 64px; height: 64px; object-fit: contain; border-radius: 8px; }
+.pending-media-item span { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 12px; }
+.pending-media-item small { display: block; color: var(--muted); margin-top: 5px; }
