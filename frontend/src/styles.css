@@ -4822,3 +4822,9 @@ input[aria-invalid="true"] { border-color: var(--danger, #d64252); }
   .sidebar-is-open .sidebar-scrim { display: block; position: fixed; inset: 0 0 65px; background: #0005; z-index: 29; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+@media (max-width: 767px) {
+  .auth-form-panel { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 26px; padding: 28px 20px 32px; }
+  .auth-mobile-brand { display: block; position: static; width: min(100%, 430px); margin: 0 auto; }
+  .auth-form-wrap { margin: 0 auto; }
+  .auth-bottom { position: static; margin-top: 0; }
+}
