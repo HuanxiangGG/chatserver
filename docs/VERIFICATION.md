@@ -32,6 +32,9 @@
 | Bash 脚本语法 | 通过 |
 | Docker Compose 基础/HTTPS config --quiet | 均通过，官方 Compose v2.39.4；二进制 SHA256 校验通过 |
 | CI YAML 结构解析 | 通过 |
+| 远端 Ubuntu / PostgreSQL17 / Redis7.4 | 27/27 测试、类型检查与构建全部通过 |
+| Linux Docker 后端与 Nginx 镜像 | 均构建成功；完整 Compose 四个服务全部健康 |
+| Nginx API/前端/WebSocket 端到端 | Nginx配置检查、Cookie/CSRF、持久化、实时消息收发全部通过 |
 | 交互管理员 CLI | 本地独立 QA 库创建成功，密码输入无回显 |
 | 浏览器真实业务 | 注册、登录、好友申请/接受、私聊发送、另一 Socket 客户端回复/已读、群创建/群消息、群管理、注销、管理员登录/真实统计已观察通过 |
 | 响应式外观 | 1440×960 桌面和390×844手机亮/暗模式检查；手机文档宽度390，无横向溢出 |
@@ -46,7 +49,9 @@ Prisma6 的构建配置依赖曾引入 `deepmerge-ts<8` 的递归对象栈耗尽
 
 ## 待目标环境验证
 
-- 本机无 Docker daemon，未在本机实际运行 Linux 镜像、Nginx 或完整 Compose；GitHub CI 已配置容器构建与完整 Compose 健康检查，远端结果须查看 Actions。
+本机无 Docker daemon；上述 Linux 容器验收已在 GitHub Actions 的隔离 Ubuntu 环境实际完成。成功运行：[42554307949](https://github.com/HuanxiangGG/chatserver/actions/runs/42554307949)，验证代码提交 `10acf98f41297682a1bf04ccaf4e20955e35c337`。后续本文档更新不改变已验证应用代码。
+
+### 仍待真实部署环境验证
 - 未配置真实域名、签发 HTTPS 证书或发布公网。
 - 备份/恢复脚本经过语法与操作路径审查，但未对真实生产数据运行或演练恢复。
 - 未进行实际手机 Safari/Android、多浏览器兼容、容量压测或多实例负载均衡演练。
