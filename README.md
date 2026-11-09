@@ -183,7 +183,7 @@ npm run typecheck
 npm run build
 ```
 
-覆盖注册/登录、CSRF、好友流程、私聊、消息重试去重、群权限、Socket 鉴权、封禁与注销、越权读取、上传真实 MIME/扩展名/大小、回执、管理员审计、改密撤销会话与暴力破解限流。详细的实际执行结果见 [验收记录](docs/VERIFICATION.md)。GitHub Actions 在 Ubuntu 使用真实 PostgreSQL/Redis 执行检查，并构建两种 Docker 镜像。
+覆盖注册/登录、CSRF、好友流程、私聊、消息重试去重、群权限、Socket 鉴权、封禁与注销、越权读取、上传真实 MIME/扩展名/大小、回执、管理员审计、改密撤销会话与暴力破解限流。详细的实际执行结果见 [验收记录](docs/VERIFICATION.md)。GitHub Actions 在 Ubuntu 使用真实 PostgreSQL/Redis 执行检查，构建并启动完整 Compose，再通过 Nginx 验证 Cookie/CSRF、消息持久化与 WebSocket 收发。生产后端镜像会移除开发依赖。
 
 ## GitHub 提交与推送
 

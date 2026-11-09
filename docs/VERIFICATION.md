@@ -28,7 +28,7 @@
 | 后端 Vitest 集成测试总计 | **27/27 通过** |
 | 前后端 TypeScript | 通过 |
 | 前后端生产构建 | 通过；生产前端 JS 388.19kB / gzip 121.42kB |
-| npm audit --omit=dev | 0 个已知漏洞 |
+| npm audit（完整依赖及 omit=dev） | 0 个已知漏洞 |
 | Bash 脚本语法 | 通过 |
 | Docker Compose 基础/HTTPS config --quiet | 均通过，官方 Compose v2.39.4；二进制 SHA256 校验通过 |
 | CI YAML 结构解析 | 通过 |
@@ -39,6 +39,8 @@
 测试使用独立 PostgreSQL 18.6 测试进程和 Redis 7.4.7（本机没有 Docker）；业务部署镜像配置为 PostgreSQL17。CI 使用目标 PostgreSQL17/Redis7.4。浏览器 QA 与 API 集成测试分别使用不同数据库和 Redis8/9，测试数据和凭证均在仓库之外，未作为默认账户提交。
 
 首轮测试发现相同毫秒下的回执遗漏，已修复并加入同时间戳分页和回执回归。安全复核还修复了并发群主转让、改密/登录会话撤销竞争、屏蔽/好友接受竞争、隐藏消息的内容更新广播，以及恢复令牌的 Nginx 访问日志泄露风险。
+
+全新隔离目录 `npm ci`、Prisma生成、类型检查、构建和 Vitest5.1 的27项测试均通过；生产后端镜像构建后移除开发依赖。跨平台锁文件包含 Linux 的 Rollup、esbuild、Tailwind oxide 与 lightningcss 原生依赖，避免在 macOS 生成锁文件时遗漏 Linux 包。
 
 Prisma6 的构建配置依赖曾引入 `deepmerge-ts<8` 的递归对象栈耗尽通告，现通过 `overrides` 固定到8.0.2；重新验证生成、迁移、集成测试、构建与生产依赖审计均通过。[上游安全通告](https://github.com/advisories/GHSA-ggr8-5vv4-36mx)
 

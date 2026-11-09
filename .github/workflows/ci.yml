@@ -42,10 +42,16 @@ jobs:
       - run: docker compose --env-file .env.example config --quiet
       - run: docker compose --env-file .env.example build
       - run: docker compose --env-file .env.example up -d --wait --wait-timeout 180
+        env:
+          APP_ORIGIN: http://localhost:8080
       - run: |
           curl --fail http://localhost:8080/api/health
           curl --fail http://localhost:8080/ > /dev/null
           docker compose --env-file .env.example exec -T nginx nginx -t
+      - run: node scripts/smoke.mjs
+      - if: failure()
+        run: |
+          if [ -f .env.example ]; then docker compose --env-file .env.example logs --no-color --tail=100; fi
       - if: always()
         run: |
           if [ -f .env.example ]; then docker compose --env-file .env.example down; fi
