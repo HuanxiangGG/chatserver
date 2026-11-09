@@ -35,6 +35,10 @@ model User {
   blockedBy        BlockedUser[]        @relation("Blocked")
   adminActions     AdminAction[]
   resets           PasswordReset[]
+  communities      ServerMember[]
+  ownedServers     Server[]             @relation("ServerOwner")
+  channelGrants    ChannelGrant[]
+  serverBans       ServerBan[]
 }
 
 model Session {
@@ -85,6 +89,7 @@ model Conversation {
   updatedAt   DateTime             @updatedAt
   members     ConversationMember[]
   messages    Message[]
+  channel     Channel?
 }
 
 model ConversationMember {
@@ -191,4 +196,93 @@ model PasswordReset {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Server {
+  id          String            @id @default(cuid())
+  ownerId     String
+  name        String
+  description String            @default("")
+  createdAt   DateTime          @default(now())
+  owner       User              @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members     ServerMember[]
+  categories  ChannelCategory[]
+  channels    Channel[]
+  invites     ServerInvite[]
+  bans        ServerBan[]
+}
+
+model ServerMember {
+  serverId   String
+  userId     String
+  role       String    @default("MEMBER")
+  mutedUntil DateTime?
+  joinedAt   DateTime  @default(now())
+  server     Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([serverId, userId])
+  @@index([userId])
+}
+
+model ServerBan {
+  serverId  String
+  userId    String
+  reason    String
+  createdAt DateTime @default(now())
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([serverId, userId])
+}
+
+model ChannelCategory {
+  id       String    @id @default(cuid())
+  serverId String
+  name     String
+  position Int       @default(0)
+  server   Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channels Channel[]
+
+  @@index([serverId, position])
+}
+
+model Channel {
+  id             String           @id @default(cuid())
+  serverId       String
+  conversationId String           @unique
+  categoryId     String?
+  position       Int              @default(0)
+  isPrivate      Boolean          @default(false)
+  readOnly       Boolean          @default(false)
+  archivedAt     DateTime?
+  server         Server           @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  category       ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  grants         ChannelGrant[]
+
+  @@index([serverId, archivedAt, position])
+}
+
+model ChannelGrant {
+  channelId String
+  userId    String
+  channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+}
+
+model ServerInvite {
+  id        String    @id @default(cuid())
+  serverId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  maxUses   Int
+  uses      Int       @default(0)
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  server    Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId, createdAt])
 }

@@ -1,3 +1,4 @@
+import { channelPermission } from './channel-policy.js';
 import { isTrustedOrigin } from './context.js';
 import type { Server as HttpServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
@@ -74,9 +75,11 @@ function respond(ack: unknown, value: unknown) { if (typeof ack === 'function') 
 function reject(socket: Socket, error: unknown, ack?: unknown) {
   const message = error instanceof HttpError ? error.message : '实时连接暂时不可用';
   respond(ack, { error: message }); socket.emit('operation:error', { error: message });
-  if (error instanceof HttpError && [401, 403].includes(error.status)) socket.disconnect(true);
+  // A denied channel operation does not revoke an otherwise valid session.
+  if (error instanceof HttpError && error.status === 401) socket.disconnect(true);
 }
 async function eventMembers(conversationId: string, userId: string) {
+  await channelPermission(conversationId, userId, true);
   const conversation = await prisma.conversation.findFirst({ where: { id: conversationId, members: { some: { userId } } }, include: { members: { select: { userId: true } } } });
   if (!conversation) throw new HttpError(403, '无权访问此会话');
   if (conversation.type === 'DIRECT') for (const other of conversation.members) if (other.userId !== userId) await assertUnblocked(userId, other.userId);
