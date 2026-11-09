@@ -2,9 +2,9 @@
 
 原创、响应式实时聊天网站，支持中文界面、亮/暗主题，适用于电脑和手机浏览器。采用 React 19 / TypeScript / Vite / Tailwind CSS / React Router，以及 Node.js / Express / Socket.IO / Prisma / PostgreSQL / Redis。代码与部署文件完整保存在本仓库，无内置账户或默认管理员密码。
 
-## 社区升级开发分支（尚未部署）
+## 社区升级（已合并 main，尚未部署）
 
-本分支新增社区、文字频道、频道分类和邀请系统，入口位于左侧导航栏。现有私聊、好友和群聊继续保留，频道复用 Conversation/Message，不会把旧群聊改名为社区。
+main 已包含社区、文字频道、频道分类和邀请系统，入口位于左侧导航栏。现有私聊、好友和群聊继续保留，频道复用 Conversation/Message，不会把旧群聊改名为社区。
 
 - 创建社区后自动建立 #general；新增/改名/介绍/分类/位置排序、私密频道和只读公告。
 - OWNER/ADMIN 管理社区及频道，MODERATOR 可邀请与禁言/移除普通成员。仅 OWNER 分配角色；所有者不能直接退出。
@@ -14,13 +14,13 @@
 - 频道归档采用软删除，保留其 Conversation、Message 和附件；危险管理操作记录 AdminAction。
 - 社区上限 200 人、50 个活动频道、30 个分类；单账号最多 50 个社区。暂不提供语音频道、所有者转让、社区解散、自定义角色、拖动排序和频道搜索消息。位置排序目前通过设置数字完成，搜索框只筛选频道名称。
 
-验证状态及后续范围见 [docs/UPGRADE-STATUS.md](docs/UPGRADE-STATUS.md)。该分支仍为 Draft，不能将这里的开发进度当作线上已发布。
+验证状态及后续范围见 [docs/UPGRADE-STATUS.md](docs/UPGRADE-STATUS.md)。社区与频道核心已于 2026-11-09 通过 [PR #1](https://github.com/HuanxiangGG/chatserver/pull/1) 合入 main；整体升级仍有未完成项，线上尚未部署此版本。
 
 ### 新迁移与更新门槛
 
 `20261109100000_community_channels` 仅新增 7 张社区表及其索引、外键；不清空或重建原用户、群聊、消息表，不改 PostgreSQL/Redis/上传卷及 Caddy/Compose 配置。Prisma Client 需要重新生成；发布时前后端均需重新构建容器。后端启动仍执行 `prisma migrate deploy`。
 
-生产更新前必须按已有流程核对 Compose 项目、挂载和原版本，完成数据库与上传备份并在独立目标恢复验证。不要直接把 Draft 分支替换为生产版本。验证及合并后，在原目录执行：
+生产更新前必须按已有流程核对 Compose 项目、挂载和原版本，完成数据库与上传备份并在独立目标恢复验证。合入 main 不代表已完成生产验收。完成备份、恢复和兼容回滚验证后，在原目录执行：
 
 ```bash
 git pull --ff-only
@@ -91,7 +91,7 @@ docker compose ps
 
 ### 现有 Caddy 生产部署（chat.6hx9.com）
 
-保留 Ubuntu + Docker Compose + Caddy 架构。Caddy 继续终止 HTTPS，不要为此站点启用下方历史 Nginx/Certbot HTTPS 方案。已有 PostgreSQL、Redis、上传卷的名称和挂载路径均未改变，来源校验修复本身不需要数据库迁移；本分支的社区升级包含上文说明的新增表迁移。
+保留 Ubuntu + Docker Compose + Caddy 架构。Caddy 继续终止 HTTPS，不要为此站点启用下方历史 Nginx/Certbot HTTPS 方案。已有 PostgreSQL、Redis、上传卷的名称和挂载路径均未改变，来源校验修复本身不需要数据库迁移；社区升级包含上文说明的新增表迁移。
 
 只修改已有 `.env` 中下列配置，不覆盖密码和数据库名称：
 
