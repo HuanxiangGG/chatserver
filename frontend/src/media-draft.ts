@@ -27,8 +27,9 @@ export class MediaDraft {
   }
   async upload(send: (file: File) => Promise<Attachment>) {
     // Cache each confirmed attachment so a failed upload or message POST can retry safely.
-    for (const item of this.items) if (!item.attachment) item.attachment = await send(item.file);
-    return this.items.map(i => i.attachment!.id);
+    const batch = [...this.items];
+    for (const item of batch) if (!item.attachment) item.attachment = await send(item.file);
+    return batch.map(i => i.attachment!.id);
   }
   prepare(content: string, attachmentIds: string[], replyToId?: string) {
     this.delivery ??= { content, attachmentIds: [...attachmentIds], replyToId, clientId: this.clientId };

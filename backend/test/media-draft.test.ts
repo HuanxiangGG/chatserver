@@ -44,6 +44,13 @@ describe('per-conversation media drafts', () => {
     queue.stage([]);
     queue.clear(); expect(queue.clientId).not.toBe(id); expect(queue.delivery).toBeNull();
   });
+  it('finishes an explicitly sent upload batch when previews are disposed on navigation', async () => {
+    const {queue}=draft(); queue.stage([image()]);
+    let finish!: (value: any) => void;
+    const pending=queue.upload(()=>new Promise(resolve=>{finish=resolve;}));
+    queue.clear(); finish({id:'persisted'});
+    expect(await pending).toEqual(['persisted']);
+  });
   it('isolates conversation drafts and releases all previews on cleanup', () => {
     const a=draft(),b=draft(); a.queue.stage([image()]); b.queue.stage([image()]);
     a.queue.text='A'; b.queue.text='B'; a.queue.clear();
