@@ -45,19 +45,60 @@ git clone https://github.com/HuanxiangGG/chatserver.git
 cd chatserver
 cp .env.example .env
 nano .env
+# 已有宿主机 Caddy 使用这一组合；保留现有 Compose 项目名
+export COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml
 docker compose up -d --build
 docker compose ps
 ```
 
 **启动前必须修改 `.env` 中两处 `CHANGE_ME...`，数据库连接 URL 内的密码也要一致。** 用 `openssl rand -hex 32` 分别生成数据库、Redis 密码，使用十六进制可免除 URL/Compose 特殊字符转义。`.env` 不会进入 Git 或 Docker 构建上下文。也可在复制前用 `node scripts/configure-env.mjs` 直接创建随机配置（需要 Node；拒绝覆盖已有 `.env`）。
 
-默认仅绑定服务器 `127.0.0.1:8080`，用于本地验收；通过 SSH 隧道访问：
+默认仅绑定服务器 `127.0.0.1:8080`，供已有 Caddy 反向代理访问；浏览器应访问公网 HTTPS 域名。生产拒绝 localhost 来源与非 HTTPS 来源。后端启动只执行增量 `prisma migrate deploy`，不会重置数据。
 
-```bash
-ssh -L 8080:127.0.0.1:8080 your-user@your-server
+### 现有 Caddy 生产部署（chat.6hx9.com）
+
+保留 Ubuntu + Docker Compose + Caddy 架构。Caddy 继续终止 HTTPS，不要为此站点启用下方历史 Nginx/Certbot HTTPS 方案。已有 PostgreSQL、Redis、上传卷的名称和挂载路径均未改变，本次无数据库迁移。
+
+只修改已有 `.env` 中下列配置，不覆盖密码和数据库名称：
+
+```dotenv
+APP_ORIGIN=https://chat.6hx9.com
+COOKIE_SECURE=true
+TRUST_PROXY=2
+HTTP_BIND=127.0.0.1
+HTTP_PORT=8080
 ```
 
-然后打开 `http://localhost:8080`。需要正式域名时按下方 HTTPS 配置；浏览器来源必须与 `APP_ORIGIN` 完全匹配。首次后端启动会执行 `prisma migrate deploy`，成功后才启动服务。
+两跳链路为浏览器 → Caddy → Nginx → Express。若已有 Caddy 直接代理 Express，实际是一跳，应使用 `TRUST_PROXY=1` 并保留已有前端服务配置。不能将代理信任设为无限制 true；不能把后端或 Caddy 专用 Nginx 监听端口暴露给公网。Nginx 的 Caddy 配置仅适用于可信代理入口，保留 Caddy 提供的 HTTPS 协议和转发链；直接访问的旧 Nginx 配置仍使用自己的 `$scheme`，防止信任外部伪造请求头。
+
+提供 `caddy/Caddyfile.example` 作为现有 Caddyfile 的单站点参考：保留 Host 和原始 Origin，Caddy 重建 X-Forwarded-For/X-Forwarded-Proto，自动代理 WebSocket。**不要覆盖其他站点**。按实际 Caddyfile 路径执行 `caddy validate --config /etc/caddy/Caddyfile`，必要时 `sudo systemctl reload caddy`。Caddy 运行在容器时，上游需使用现有网络中的 nginx 服务地址，不是容器自己的 127.0.0.1；保留原有网络。
+
+新提供的 override 需要 Docker Compose 2.24.4+（使用 `!override` 固定 loopback 端口）；不会创建新数据卷。保留原项目目录和 Compose 项目名，若现有部署已有自定义 override，先核对合并后的配置，保留原网络与卷绑定。不要将 `.env.example` 覆盖到现有 `.env`。
+
+```bash
+# 在原生产目录执行；COMPOSE_PROJECT_NAME 不要改变
+# 首先使用当前部署的 Compose 配置备份
+./scripts/backup.sh
+git pull --ff-only
+# 拉取只更新代码，此时尚未重建容器；保存数据清单
+./scripts/data-inventory.sh > /安全的备份目录/before.txt
+# 编辑现有 .env 设置上方变量，不变更已有数据库密码
+export COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml
+# 只重建应用和前端，保持数据库、Redis、Caddy 运行
+docker compose up -d --build --no-deps backend nginx
+docker compose exec backend npx prisma migrate deploy
+docker compose ps
+curl --fail https://chat.6hx9.com/api/health
+./scripts/data-inventory.sh > /安全的备份目录/after.txt
+```
+
+如果更新前尚无新增 override/脚本，先用原有 Compose 配置执行备份并记录 `docker compose config --volumes`、数据库行数和上传 SHA256，再拉取代码并启用 override。不要执行 down、删除卷、重置迁移。首次可先用浏览器提交空注册表单验证返回中文字段错误而非 Origin 错误；随后用专门的验收账号测试注册/登录与 Socket.IO（不要用 smoke 脚本对生产自动创建账户）。
+
+`APP_ORIGIN` 支持逗号分隔多个明确来源，自动规范化大小写、默认端口、末尾斜杠。禁止 `*`、带路径/查询/凭据的 URL；生产不接受 HTTP、localhost 或回环地址。不根据 Host/X-Forwarded-Host 自动扩大白名单。
+
+错误代码：`ORIGIN_UNTRUSTED`/`ORIGIN_MISSING` 为来源配置或请求头错误；`CSRF_INVALID` 为令牌错误；`COOKIE_MISSING` 为未登录或浏览器未携带 Cookie；`PROXY_HTTPS_REQUIRED` 为代理未正确传递 HTTPS。日志不输出 Cookie、CSRF、会话令牌。正常未登录的 `/auth/me` 返回 401；登录/注册成功后前端会复查 Cookie 会话。Cookie 保持 HttpOnly、SameSite=Lax、Secure。
+
+更新前后，数据库 User/Message/MessageAttachment 等行数不应下降；实时使用会使计数增加。上传清单中原有路径的 SHA256 应一致，新上传可增加文件。卷名和挂载必须保持一致。清单写到受限备份目录，勿提交 Git。脚本不写数据库、不修改附件；需进一步审计可在隔离备份库中核对 ID。恢复流程仍仅写新数据库。
 
 ### 迁移、初始化和管理员
 
@@ -72,7 +113,7 @@ docker compose exec -it backend npm run admin:create
 
 管理员 CLI 提示输入用户名、邮箱、显示名称和两次密码；至少 10 字符，bcrypt 上限 72 个 UTF-8 字节。已存在用户名/邮箱不会被覆盖。创建后从正常登录页进入，在导航打开管理后台。没有默认管理员。
 
-### HTTPS / Nginx / WebSocket
+### 历史独立 HTTPS / Nginx / WebSocket（已有 Caddy 请跳过）
 
 Nginx 已配置 `/api/` 反向代理、`/socket.io/` 的 Upgrade/Connection 和 75 秒超时，以及 SPA 路由和安全响应头。Socket.IO 使用纯 WebSocket 传输；不使用 HTTP polling。[多实例说明](https://socket.io/docs/v4/redis-adapter/)
 
@@ -154,7 +195,7 @@ npm run dev:frontend
 | `REDIS_URL` | 本地 Redis 连接；Compose 内自动生成 |
 | `APP_ORIGIN` | 允许的浏览器来源，生产 HTTPS 域名；可逗号分隔 |
 | `COOKIE_SECURE` | HTTPS 必须 true；本地 HTTP false |
-| `TRUST_PROXY` | 本地直连 0；Nginx 后 1（Compose 固定 1） |
+| `TRUST_PROXY` | 本地直连 0；Nginx 后 1；Caddy → Nginx 后 2 |
 | `PORT` | 本地后端端口，默认 3000 |
 | `UPLOAD_DIR` | 上传路径；Compose 固定 `/app/uploads` 并挂持久卷 |
 | `HTTP_BIND` / `HTTP_PORT` | Nginx 绑定地址/HTTP 端口 |
