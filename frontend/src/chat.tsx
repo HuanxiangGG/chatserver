@@ -13,6 +13,7 @@ import {
   File,
   Image,
   Info,
+  Hash,
   LoaderCircle,
   MessageCircle,
   MoreHorizontal,
@@ -170,7 +171,7 @@ export function ChatPage() {
   }, [sync, id, load]);
   useEffect(() => {
     const updated = conversations.find((c) => c.id === id);
-    if (updated) setConversation(updated);
+    if (updated) setConversation(old => ({ ...updated, canWrite: old?.canWrite }));
   }, [conversations, id]);
   useEffect(() => {
     if (!socket || !id) return;
@@ -332,6 +333,7 @@ export function ChatPage() {
   }
   async function send(e?: FormEvent) {
     e?.preventDefault();
+    if (conversation?.canWrite === false) return;
     if (!id || sendLock.current || (!draft.trim() && !queue().items.length)) return;
     const targetId = id, pending = queue(), content = draft.trim(), replyToId = reply?.id;
     sendLock.current = true;
@@ -362,6 +364,7 @@ export function ChatPage() {
     }
   }
   function upload(files: FileList | File[] | null) {
+    if (conversation?.canWrite === false) return;
     if (!files?.length || sendLock.current || !id) return;
     try { queue().stage(Array.from(files)); renderDraft(v => v + 1); }
     catch (error) { toast((error as Error).message, true); }
@@ -461,26 +464,28 @@ export function ChatPage() {
     );
   const title = conversationTitle(conversation, user!.id),
     other = conversationUser(conversation, user!.id),
-    isGroup = conversation.type === "GROUP";
+    isChannel = conversation.type === "CHANNEL",
+    isGroup = conversation.type !== "DIRECT",
+    writable = conversation.canWrite !== false;
   return (
     <div className="chat-room">
       <div className="chat-primary">
         <header className="chat-header">
           <Link
             className="icon-btn mobile-back"
-            to="/chat"
-            aria-label="返回消息列表"
+            to={isChannel ? `/servers/${conversation.channel?.serverId}` : "/chat"}
+            aria-label="返回列表"
           >
             <ArrowLeft size={22} />
           </Link>
-          <Avatar user={other} group={isGroup} showStatus={!isGroup} />
+          {isChannel ? <div className="channel-symbol"><Hash size={28} /></div> : <Avatar user={other} group={isGroup} showStatus={!isGroup} />}
           <div className="chat-header-title">
             <h1>
               {title}
-              {isGroup && <span className="group-tag">群聊</span>}
+              {isGroup && <span className="group-tag">{isChannel ? "文字频道" : "群聊"}</span>}
             </h1>
             <span>
-              {isGroup
+              {isChannel ? conversation.description || "文字频道" : isGroup
                 ? `${conversation.members.length} 位成员 · ${conversation.members.filter((m) => m.user.status === "ONLINE").length} 人在线`
                 : statusText(other)}
             </span>
@@ -497,8 +502,8 @@ export function ChatPage() {
             {isGroup && (
               <Link
                 className="icon-btn"
-                to={`/groups/${id}`}
-                aria-label="群聊管理"
+                to={isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`}
+                aria-label={isChannel ? "社区管理" : "群聊管理"}
               >
                 <MoreHorizontal size={23} />
               </Link>
@@ -538,7 +543,7 @@ export function ChatPage() {
           )}
           {messages.length === 0 ? (
             <div className="conversation-start">
-              <Avatar user={other} group={isGroup} size="xl" />
+              {isChannel ? <div className="channel-symbol channel-symbol-large"><Hash size={40} /></div> : <Avatar user={other} group={isGroup} size="xl" />}
               <h2>
                 {isGroup ? "新的空间，新的对话" : `向 ${title} 打个招呼吧`}
               </h2>
@@ -670,7 +675,7 @@ export function ChatPage() {
           <div className="composer">
             <textarea
               ref={composer}
-              disabled={sending || !!media?.delivery}
+              disabled={!writable || sending || !!media?.delivery}
               onPaste={e => { const images = clipboardImages(e.clipboardData.items); if (images.length) { e.preventDefault(); upload(images); } }}
               rows={1}
               value={draft}
@@ -692,7 +697,7 @@ export function ChatPage() {
               onBlur={() =>
                 socket?.emit("typing", { conversationId: id, typing: false })
               }
-              placeholder={`发送消息给${isGroup ? "群聊" : ` ${title}`}…`}
+              placeholder={!writable ? "此频道只读，或你正在被禁言" : `发送消息到 ${title}…`}
               aria-label="消息内容"
               maxLength={4000}
             />
@@ -712,7 +717,7 @@ export function ChatPage() {
                   className="icon-btn"
                   aria-label="添加图片或文件"
                   onClick={() => file.current?.click()}
-                  disabled={uploading || sending}
+                  disabled={!writable || uploading || sending}
                 >
                   {uploading ? (
                     <LoaderCircle size={20} className="spin" />
@@ -740,6 +745,7 @@ export function ChatPage() {
                   type="submit"
                   className="send-button"
                   disabled={
+                    !writable ||
                     sending ||
                     uploading ||
                     (!draft.trim() && !media?.items.length)
@@ -796,7 +802,7 @@ export function ChatPage() {
             </button>
           </header>
           <div className="info-profile">
-            <Avatar user={other} group={isGroup} size="xl" />
+            {isChannel ? <div className="channel-symbol channel-symbol-large"><Hash size={40} /></div> : <Avatar user={other} group={isGroup} size="xl" />}
             <h2>{title}</h2>
             <p>
               {isGroup
@@ -812,7 +818,7 @@ export function ChatPage() {
           {isGroup ? (
             <>
               <div className="info-section-title">
-                群成员 <span>{conversation.members.length}</span>
+                {isChannel ? "频道成员" : "群成员"} <span>{conversation.members.length}</span>
               </div>
               <div className="info-member-list">
                 {conversation.members.map((m) => (
@@ -822,7 +828,7 @@ export function ChatPage() {
                       {m.user.displayName}
                       <small>
                         {m.role === "OWNER"
-                          ? "群主"
+                          ? (isChannel ? "所有者" : "群主")
                           : m.role === "ADMIN"
                             ? "管理员"
                             : statusText(m.user)}
@@ -832,8 +838,8 @@ export function ChatPage() {
                   </Link>
                 ))}
               </div>
-              <Link to={`/groups/${id}`} className="btn btn-secondary">
-                管理群聊 <ArrowRight size={15} />
+              <Link to={isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`} className="btn btn-secondary">
+                {isChannel ? "社区成员与管理" : "管理群聊"} <ArrowRight size={15} />
               </Link>
             </>
           ) : (

@@ -52,7 +52,9 @@ export interface Message {
 }
 export interface Conversation {
   id: string;
-  type: "DIRECT" | "GROUP";
+  type: "DIRECT" | "GROUP" | "CHANNEL";
+  channel?: { id: string; serverId: string; readOnly: boolean; isPrivate: boolean } | null;
+  canWrite?: boolean;
   name: string | null;
   description: string | null;
   avatarUrl: string | null;
@@ -84,4 +86,15 @@ export interface AuditAction {
   createdAt: string;
   admin?: User;
   metadata?: unknown;
+}
+
+export type ServerRole = 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER';
+export interface Community {
+  id: string; name: string; description: string; ownerId: string; role: ServerRole;
+  _count?: { members: number };
+}
+export interface CommunityDetail extends Community {
+  categories: { id: string; name: string; position: number }[];
+  members: { userId: string; role: ServerRole; mutedUntil: string | null; user: User }[];
+  channels: { id: string; conversationId: string; categoryId: string | null; position: number; isPrivate: boolean; readOnly: boolean; conversation: { name: string; description: string }; grants: { userId: string }[] }[];
 }

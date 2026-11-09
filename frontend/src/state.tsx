@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { io } from "socket.io-client";
 import type { Socket } from "socket.io-client";
 import { ApiError, api, json, setCsrf } from "./api";
-import type { Conversation, RequestList, User } from "./types";
+import type { Community, Conversation, RequestList, User } from "./types";
 interface State {
   user: User | null;
   loading: boolean;
@@ -18,6 +18,7 @@ interface State {
   login: (user: User, token: string) => void;
   logout: () => Promise<void>;
   reloadUser: () => Promise<void>;
+  communities: Community[];
   conversations: Conversation[];
   friends: User[];
   requests: RequestList;
@@ -39,6 +40,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
     [csrfToken, setToken] = useState(""),
+    [communities, setCommunities] = useState<Community[]>([]),
     [conversations, setConversations] = useState<Conversation[]>([]),
     [friends, setFriends] = useState<User[]>([]),
     [requests, setRequests] = useState<RequestList>({
@@ -80,12 +82,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!user) return;
     try {
-      const [c, f, r] = await Promise.all([
+      const [c, f, r, communities] = await Promise.all([
         api<Conversation[]>("/conversations"),
         api<User[]>("/friends"),
         api<RequestList>("/friend-requests"),
+        api<Community[]>("/servers"),
       ]);
       if (authUserId.current !== user.id) return;
+      setCommunities(communities);
       setConversations(c);
       setFriends(f);
       setRequests(r);
@@ -116,7 +120,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCsrf("");
         setToken("");
         setUser(null);
-        setConversations([]);
+        setCommunities([]);
+    setConversations([]);
         setFriends([]);
         setRequests({ incoming: [], outgoing: [] });
         deliveredIds.current.clear();
@@ -135,6 +140,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCsrf("");
     setUser(null);
     setToken("");
+    setCommunities([]);
     setConversations([]);
     setFriends([]);
     setRequests({ incoming: [], outgoing: [] });
@@ -174,6 +180,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void refresh().catch(() => {});
     };
     client.on("conversation:updated", update);
+    client.on("server:updated", update);
     client.on("friend-request:updated", update);
     client.on("friends:updated", update);
     client.on("message:new", () => void refresh().catch(() => {}));
@@ -222,6 +229,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         logout,
         reloadUser,
         conversations,
+        communities,
         friends,
         requests,
         refresh,

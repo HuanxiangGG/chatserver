@@ -1,3 +1,4 @@
+import { CommunityDialog, CommunitySidebar } from './communities';
 import { useState } from "react";
 import {
   Link,
@@ -128,18 +129,20 @@ export function CreateGroup({ onClose }: { onClose: () => void }) {
   );
 }
 export function Layout() {
-  const { user, logout, requests, connected, theme, setTheme, conversations } =
+  const { user, logout, requests, connected, theme, setTheme, conversations, communities } =
       useApp(),
+    [communityDialog, setCommunityDialog] = useState<'create' | 'join' | null>(null),
     [group, setGroup] = useState(false),
     [menu, setMenu] = useState(false),
     [sidebarOpen, setSidebarOpen] = useState(false),
     task = useTask(),
     location = useLocation();
-  const onChat = location.pathname.startsWith("/chat"),
-    active = location.pathname.split("/")[2];
+  const isCommunity = location.pathname.startsWith('/servers/'), serverId = isCommunity ? location.pathname.split('/')[2]! : '';
+  const onChat = location.pathname.startsWith("/chat") || isCommunity,
+    active = isCommunity ? (location.pathname.endsWith('/settings') ? 'settings' : location.pathname.split('/')[4]) : location.pathname.split("/")[2];
   return (
     <div className={`app-layout ${sidebarOpen ? 'sidebar-is-open' : ''}`} onKeyDown={e => { if (e.key === 'Escape') setSidebarOpen(false); }}>
-      {onChat && <button className="mobile-sidebar-toggle btn btn-secondary" aria-label={sidebarOpen ? '关闭消息列表' : '打开消息列表'} aria-expanded={sidebarOpen} aria-controls="conversation-sidebar" onClick={() => setSidebarOpen(!sidebarOpen)}>{sidebarOpen ? '关闭列表' : '消息列表'}</button>}
+      {onChat && active && <button className="mobile-sidebar-toggle btn btn-secondary" aria-label={sidebarOpen ? '关闭消息列表' : '打开消息列表'} aria-expanded={sidebarOpen} aria-controls="conversation-sidebar" onClick={() => setSidebarOpen(!sidebarOpen)}>{sidebarOpen ? '关闭列表' : '消息列表'}</button>}
       {sidebarOpen && <button className="sidebar-scrim" aria-label="关闭消息列表" onClick={() => setSidebarOpen(false)} />}
       <aside className="nav-rail">
         <Link to="/chat" aria-label="泊岸首页" className="rail-brand">
@@ -185,6 +188,10 @@ export function Layout() {
               <span>管理</span>
             </NavLink>
           )}
+          <div className="rail-divider" />
+          {communities.map(s => <NavLink key={s.id} to={`/servers/${s.id}`} title={s.name} aria-label={`社区：${s.name}`} className={`rail-server ${serverId === s.id ? 'active' : ''}`}><span>{s.name.slice(0, 2)}</span>{conversations.some(c => c.channel?.serverId === s.id && c.unreadCount > 0) && <i className="rail-dot" />}</NavLink>)}
+          <button className="rail-server rail-create" title="创建社区" aria-label="创建社区" onClick={() => setCommunityDialog('create')}><Plus size={23} /></button>
+          <button className="rail-server rail-join" title="加入社区" aria-label="加入社区" onClick={() => setCommunityDialog('join')}><Users size={22} /></button>
         </nav>
         <div className="rail-bottom">
           <button
@@ -223,7 +230,7 @@ export function Layout() {
         </div>
       </aside>
       {onChat && (
-        <div className="sidebar-wrapper" onClick={e => { if ((e.target as HTMLElement).closest("a")) setSidebarOpen(false); }}><ConversationList active={active} onCreate={() => setGroup(true)} /></div>
+        <div className="sidebar-wrapper" onClick={e => { if ((e.target as HTMLElement).closest("a")) setSidebarOpen(false); }}>{isCommunity ? <CommunitySidebar serverId={serverId} active={active} /> : <ConversationList active={active} onCreate={() => setGroup(true)} />}</div>
       )}
       <div
         className={`workspace ${onChat ? "workspace-chat" : ""} ${active ? "has-conversation" : ""}`}
@@ -236,6 +243,7 @@ export function Layout() {
         </div>
         <Outlet />
       </div>
+      {communityDialog && <CommunityDialog join={communityDialog === 'join'} onClose={() => setCommunityDialog(null)} />}
       {group && <CreateGroup onClose={() => setGroup(false)} />}
     </div>
   );
@@ -252,6 +260,7 @@ function ConversationList({
     [filter, setFilter] = useState("all");
   const visible = conversations.filter(
     (c) =>
+      c.type !== "CHANNEL" &&
       (filter !== "unread" || c.unreadCount > 0) &&
       conversationTitle(c, user!.id)
         .toLowerCase()
@@ -295,7 +304,7 @@ function ConversationList({
           className={filter === "all" ? "active" : ""}
           onClick={() => setFilter("all")}
         >
-          全部消息 <span>{conversations.length}</span>
+          全部消息 <span>{conversations.filter(c => c.type !== "CHANNEL").length}</span>
         </button>
         <button
           className={filter === "unread" ? "active" : ""}
