@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -29,6 +29,18 @@ export function AuthPage({
     if (recoveryToken)
       window.history.replaceState(null, "", window.location.pathname);
   }, [recoveryToken]);
+  const submitting = useRef(false);
+  const [password, setPassword] = useState('');
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const strength = [password.length >= 10, /[a-z]/.test(password) && /[A-Z]/.test(password), /[0-9]/.test(password), /[^a-zA-Z0-9]/.test(password)].filter(Boolean).length;
+  function fieldError(name: string, value: string, form: HTMLFormElement) {
+    if (name === 'username' && mode === 'register' && !/^[A-Za-z0-9_]{3,24}$/.test(value)) return '用户名需为 3–24 位字母、数字或下划线';
+    if (name === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return '请输入有效的邮箱地址';
+    if ((name === 'password' || name === 'newPassword') && mode !== 'login' && (value.length < 10 || new TextEncoder().encode(value).length > 72)) return '密码至少 10 个字符，且不超过 72 个 UTF-8 字节';
+    if (name === 'confirmPassword' && value !== String(new FormData(form).get(mode === 'reset' ? 'newPassword' : 'password'))) return '两次输入的密码不一致';
+    if (!value.trim()) return '此项不能为空';
+    return '';
+  }
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [show, setShow] = useState(false),
@@ -49,10 +61,20 @@ export function AuthPage({
   };
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submitting.current) return;
     setError("");
+    const issues: Record<string, string> = {};
+    for (const [name, value] of new FormData(e.currentTarget)) {
+      const issue = fieldError(name, String(value), e.currentTarget);
+      if (issue) issues[name] = issue;
+    }
+    setFields(issues);
+    if (Object.keys(issues).length) { e.currentTarget.querySelector<HTMLInputElement>(`[name="${Object.keys(issues)[0]}"]`)?.focus(); return; }
+    submitting.current = true;
     setBusy(true);
     const f = new FormData(e.currentTarget),
       data = Object.fromEntries(f.entries());
+    delete data.confirmPassword;
     try {
       if (mode === "forgot") {
         await api("/auth/forgot-password", json("POST", data));
@@ -66,6 +88,8 @@ export function AuthPage({
           `/auth/${mode}`,
           json("POST", data),
         );
+        // Confirm that the browser actually stored/sent the HttpOnly session cookie.
+        await api('/auth/me');
         login(session.user, session.csrfToken);
         navigate(
           (location.state as { from?: string } | null)?.from || "/chat",
@@ -76,6 +100,7 @@ export function AuthPage({
       setError(err instanceof Error ? err.message : "操作失败");
     } finally {
       setBusy(false);
+      submitting.current = false;
     }
   }
   return (
@@ -84,7 +109,7 @@ export function AuthPage({
         <Brand />
         <div className="story-content">
           <span className="story-kicker">
-            <span /> YOUR PEOPLE. YOUR PLACE.
+            <span /> 与重要的人，自在交流
           </span>
           <h1>
             让交流，
@@ -127,7 +152,7 @@ export function AuthPage({
         </div>
         <div className="auth-form-wrap">
           <span className="eyebrow">
-            {mode === "register" ? "HELLO, NEW FRIEND" : "WELCOME TO HARBOR"}
+            {mode === "register" ? "欢迎加入泊岸" : "欢迎回到泊岸"}
           </span>
           <h2>{titles[mode]}</h2>
           <p>
@@ -151,7 +176,22 @@ export function AuthPage({
               </Link>
             </div>
           ) : (
-            <form onSubmit={submit} className="form-stack">
+            <form onSubmit={submit} className="form-stack" noValidate aria-busy={busy}
+              onChange={e => {
+                const target = e.target as unknown;
+                if (!(target instanceof HTMLInputElement)) return;
+                const input = target;
+                if (!input.name) return;
+                const message = fieldError(input.name, input.value, e.currentTarget);
+                input.setAttribute('aria-invalid', String(!!message));
+                input.setAttribute('aria-describedby', 'auth-field-errors');
+                setFields(previous => ({ ...previous, [input.name]: message }));
+                if (['password', 'newPassword'].includes(input.name)) {
+                  setPassword(input.value);
+                  const confirm = e.currentTarget.elements.namedItem('confirmPassword') as HTMLInputElement | null;
+                  if (confirm?.value) setFields(previous => ({ ...previous, confirmPassword: confirm.value !== input.value ? '两次输入的密码不一致' : '' }));
+                }
+              }}>
               {(mode === "login" || mode === "register") && (
                 <label>
                   用户名
@@ -236,18 +276,19 @@ export function AuthPage({
                       name={mode === "reset" ? "newPassword" : "password"}
                       type={show ? "text" : "password"}
                       required
-                      minLength={mode === "login" ? 1 : 12}
+                      minLength={mode === "login" ? 1 : 10}
                       maxLength={72}
                       autoComplete={
                         mode === "login" ? "current-password" : "new-password"
                       }
                       placeholder={
-                        mode === "login" ? "输入密码" : "至少 12 个字符"
+                        mode === "login" ? "输入密码" : "至少 10 个字符"
                       }
                     />
                     <button
                       type="button"
                       aria-label={show ? "隐藏密码" : "显示密码"}
+                      aria-pressed={show}
                       onClick={() => setShow(!show)}
                     >
                       {show ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -255,6 +296,14 @@ export function AuthPage({
                   </span>
                 </label>
               )}
+              {(mode === 'register' || mode === 'reset') && <>
+                <div className="password-strength" role="status" aria-live="polite">
+                  <meter min={0} max={4} value={strength} aria-label="密码强度" />
+                  <small>{password ? `密码强度：${['较弱', '较弱', '一般', '良好', '较强'][strength]}` : '建议组合大小写字母、数字与符号'}</small>
+                </div>
+                <label>确认密码<input name="confirmPassword" type={show ? 'text' : 'password'} autoComplete="new-password" required placeholder="再次输入密码" aria-describedby="auth-field-errors" /></label>
+              </>}
+              <div id="auth-field-errors" aria-live="polite">{Object.entries(fields).filter(([, message]) => message).map(([name, message]) => <p className="field-error" key={name}>{message}</p>)}</div>
               {mode === "login" && (
                 <div className="form-helper">
                   <span>
@@ -305,7 +354,7 @@ export function AuthPage({
               : "属于你的对话，始终在这里。"}
           </p>
         </div>
-        <div className="auth-bottom">CONNECTED, AT YOUR PACE.</div>
+        <div className="auth-bottom">以你的节奏，保持连接。</div>
       </section>
     </main>
   );

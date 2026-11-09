@@ -74,9 +74,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [login]);
   useEffect(() => {
     reloadUser()
-      .catch(() => {})
+      .catch(e => { if (!(e instanceof ApiError && e.status === 401)) toast(e.message || "检查登录状态失败，请刷新重试", true); })
       .finally(() => setLoading(false));
-  }, [reloadUser]);
+  }, [reloadUser, toast]);
   const refresh = useCallback(async () => {
     if (!user) return;
     try {

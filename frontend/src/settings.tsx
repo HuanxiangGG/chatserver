@@ -41,7 +41,7 @@ export function SettingsPage() {
     <div className="page-scroll">
       <div className="page-content settings-page">
         <PageHeading
-          eyebrow="MAKE YOURSELF AT HOME"
+          eyebrow="泊岸 · 你的交流空间"
           title="设置"
           description="按自己的节奏，享受每一次交流。"
         />

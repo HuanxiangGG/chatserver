@@ -67,7 +67,7 @@ export function FriendsPage() {
     <div className="page-scroll">
       <div className="page-content">
         <PageHeading
-          eyebrow="YOUR PEOPLE"
+          eyebrow="泊岸 · 你的交流空间"
           title="好友"
           description="把重要的人，放在触手可及的地方。"
           action={
@@ -452,7 +452,7 @@ export function ProfilePage() {
           返回好友
         </Link>
         <PageHeading
-          eyebrow="A LITTLE ABOUT YOU"
+          eyebrow="泊岸 · 你的交流空间"
           title={own ? "个人资料" : "认识一下"}
           description={
             own ? "让朋友们更容易认出你。" : "每一段连接，从了解彼此开始。"

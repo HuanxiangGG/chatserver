@@ -72,7 +72,7 @@ export function AdminPage() {
     <div className="page-scroll">
       <div className="page-content admin-page">
         <PageHeading
-          eyebrow="HARBOR CONTROL ROOM"
+          eyebrow="泊岸 · 你的交流空间"
           title="管理后台"
           description="维护友善的交流空间。每一次管理操作，都有迹可循。"
           action={

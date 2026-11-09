@@ -92,7 +92,7 @@ export function GroupPage() {
           返回聊天
         </Link>
         <PageHeading
-          eyebrow="YOUR SHARED SPACE"
+          eyebrow="泊岸 · 你的交流空间"
           title="群聊管理"
           description="给共同的空间，一点用心的照料。"
           action={

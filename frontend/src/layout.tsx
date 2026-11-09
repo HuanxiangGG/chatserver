@@ -132,12 +132,15 @@ export function Layout() {
       useApp(),
     [group, setGroup] = useState(false),
     [menu, setMenu] = useState(false),
+    [sidebarOpen, setSidebarOpen] = useState(false),
     task = useTask(),
     location = useLocation();
   const onChat = location.pathname.startsWith("/chat"),
     active = location.pathname.split("/")[2];
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${sidebarOpen ? 'sidebar-is-open' : ''}`} onKeyDown={e => { if (e.key === 'Escape') setSidebarOpen(false); }}>
+      {onChat && <button className="mobile-sidebar-toggle btn btn-secondary" aria-label={sidebarOpen ? '关闭消息列表' : '打开消息列表'} aria-expanded={sidebarOpen} aria-controls="conversation-sidebar" onClick={() => setSidebarOpen(!sidebarOpen)}>{sidebarOpen ? '关闭列表' : '消息列表'}</button>}
+      {sidebarOpen && <button className="sidebar-scrim" aria-label="关闭消息列表" onClick={() => setSidebarOpen(false)} />}
       <aside className="nav-rail">
         <Link to="/chat" aria-label="泊岸首页" className="rail-brand">
           <Brand compact />
@@ -220,7 +223,7 @@ export function Layout() {
         </div>
       </aside>
       {onChat && (
-        <ConversationList active={active} onCreate={() => setGroup(true)} />
+        <div className="sidebar-wrapper" onClick={e => { if ((e.target as HTMLElement).closest("a")) setSidebarOpen(false); }}><ConversationList active={active} onCreate={() => setGroup(true)} /></div>
       )}
       <div
         className={`workspace ${onChat ? "workspace-chat" : ""} ${active ? "has-conversation" : ""}`}
@@ -229,7 +232,7 @@ export function Layout() {
           className={`connection-banner ${connected ? "connection-hidden" : ""}`}
           role="status"
         >
-          <WifiOff size={14} /> 正在连接实时服务，恢复后将自动同步消息
+          <WifiOff size={14} /> 正在重连，恢复后将自动同步未读消息
         </div>
         <Outlet />
       </div>
@@ -255,7 +258,7 @@ function ConversationList({
         .includes(search.toLowerCase()),
   );
   return (
-    <aside className={`conversation-sidebar ${active ? "mobile-hide" : ""}`}>
+    <aside id="conversation-sidebar" className={`conversation-sidebar ${active ? "mobile-hide" : ""}`}>
       <header className="sidebar-heading">
         <div>
           <h1>
@@ -359,7 +362,7 @@ function ConversationList({
       </div>
       <footer className="sidebar-footer">
         <span className="tiny-online" /> 给重要的人，留一个位置。
-        <span>HARBOR</span>
+        <span>泊岸</span>
       </footer>
     </aside>
   );

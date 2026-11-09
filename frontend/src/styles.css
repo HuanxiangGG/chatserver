@@ -4789,3 +4789,36 @@ button,
     width: 13px;
   }
 }
+
+/* Consistent controls and resilient content sizing. */
+button { touch-action: manipulation; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+button:not(:disabled):hover { filter: brightness(.96); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.auth-form-wrap { width: min(100%, 430px); min-width: 0; }
+.form-stack input, .form-stack textarea { min-width: 0; width: 100%; box-sizing: border-box; }
+.password-field { position: relative; display: flex; width: 100%; }
+.password-field input { padding-right: 48px; }
+.password-field button { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; }
+.field-error { color: var(--danger, #d64252); font-size: 13px; margin: 4px 0; }
+input[aria-invalid="true"] { border-color: var(--danger, #d64252); }
+.password-strength { display: grid; gap: 6px; color: var(--muted); }
+.password-strength meter { width: 100%; height: 8px; }
+.upload-progress { padding: 10px 16px; display: grid; gap: 6px; min-width: 0; }
+.upload-progress span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.upload-progress progress { width: 100%; accent-color: var(--accent); }
+.sidebar-wrapper { display: contents; }
+.mobile-sidebar-toggle, .sidebar-scrim { display: none; }
+.chat-room, .chat-primary, .workspace, .message-body, .message-bubble { min-width: 0; }
+.message-content, .message-bubble, .attachment-file { overflow-wrap: anywhere; word-break: break-word; }
+.messages-scroll img { max-width: 100%; object-fit: contain; }
+@media (max-width: 767px) {
+  .auth-form-panel { padding: 28px 20px; overflow-y: auto; }
+  .auth-form-wrap { margin: auto; }
+  .auth-story { display: none; }
+  .auth-form-wrap h2 { font-size: clamp(24px, 6vw, 32px); }
+  .mobile-sidebar-toggle { display: block; position: fixed; right: 12px; bottom: 76px; z-index: 31; font-size: 12px; padding: 8px 12px; box-shadow: 0 4px 16px #0002; }
+  .sidebar-is-open .conversation-sidebar.mobile-hide { display: flex; width: min(86vw, 360px); z-index: 30; box-shadow: 10px 0 35px #0003; }
+  .sidebar-is-open .sidebar-scrim { display: block; position: fixed; inset: 0 0 65px; background: #0005; z-index: 29; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

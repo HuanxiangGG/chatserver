@@ -28,7 +28,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { api, json } from "./api";
+import { api, json, uploadFile } from "./api";
 import { useApp } from "./state";
 import type { Attachment, Conversation, Message } from "./types";
 import {
@@ -79,6 +79,8 @@ export function ChatPage() {
     [draft, setDraft] = useState(""),
     [attachments, setAttachments] = useState<Attachment[]>([]),
     [uploading, setUploading] = useState(false),
+    [uploadProgress, setUploadProgress] = useState(0),
+    [uploadName, setUploadName] = useState(""),
     [sending, setSending] = useState(false),
     [reply, setReply] = useState<Message | null>(null),
     [editing, setEditing] = useState<Message | null>(null),
@@ -356,7 +358,7 @@ export function ChatPage() {
     }
   }
   async function upload(files: FileList | null) {
-    if (!files?.length) return;
+    if (!files?.length || uploading) return;
     setUploading(true);
     try {
       if (attachments.length + files.length > 5)
@@ -374,12 +376,9 @@ export function ChatPage() {
           ].includes(chosen.type)
         )
           throw Error("支持 PNG、JPEG、GIF、WebP 图片和 PDF 文件");
-        const form = new FormData();
-        form.append("file", chosen);
-        const result = await api<Attachment>("/uploads", {
-          method: "POST",
-          body: form,
-        });
+        setUploadName(chosen.name);
+        setUploadProgress(0);
+        const result = await uploadFile<Attachment>(chosen, setUploadProgress);
         setAttachments((old) => [...old, result]);
       }
     } catch (e) {
@@ -421,7 +420,7 @@ export function ChatPage() {
             </span>
             <span className="floating-dot" />
           </div>
-          <span className="eyebrow">A LITTLE CLOSER, EVERY DAY</span>
+          <span className="eyebrow">让每一天，靠近一点</span>
           <h1>
             在这里，
             <br />
@@ -697,6 +696,7 @@ export function ChatPage() {
               ))}
             </div>
           )}
+          {uploading && <div className="upload-progress" role="status"><span>{uploadProgress === 100 ? '正在验证文件' : `正在上传 ${uploadProgress}%`} · {uploadName}</span><progress max={100} value={uploadProgress} aria-label="文件上传进度" /></div>}
           <div className="composer">
             <textarea
               ref={composer}
@@ -762,7 +762,7 @@ export function ChatPage() {
               </div>
               <div>
                 <span className="send-hint">
-                  Enter 发送 <kbd>↵</kbd>
+                  回车发送 <kbd>↵</kbd>
                 </span>
                 <button
                   type="submit"
