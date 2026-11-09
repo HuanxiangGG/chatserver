@@ -1,0 +1,50 @@
+name: Verify application
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: harbor
+          POSTGRES_PASSWORD: ci-only-disposable
+          POSTGRES_DB: harbor_test
+        ports: ['5432:5432']
+        options: --health-cmd 'pg_isready -U harbor -d harbor_test' --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: --health-cmd 'redis-cli ping' --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://harbor:ci-only-disposable@localhost:5432/harbor_test
+      REDIS_URL: redis://localhost:6379/9
+      TEST_DATABASE_URL: postgresql://harbor:ci-only-disposable@localhost:5432/harbor_test
+      TEST_REDIS_URL: redis://localhost:6379/9
+      APP_ORIGIN: http://localhost:5173
+      COOKIE_SECURE: 'false'
+      UPLOAD_DIR: /tmp/harbor-ci-uploads
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run db:migrate
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - run: docker compose --env-file .env.example config --quiet
+      - run: docker compose --env-file .env.example build
+      - run: docker compose --env-file .env.example up -d --wait --wait-timeout 180
+      - run: |
+          curl --fail http://localhost:8080/api/health
+          curl --fail http://localhost:8080/ > /dev/null
+          docker compose --env-file .env.example exec -T nginx nginx -t
+      - if: always()
+        run: docker compose --env-file .env.example down

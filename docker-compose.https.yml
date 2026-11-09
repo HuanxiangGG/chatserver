@@ -1,0 +1,16 @@
+services:
+  nginx:
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      NGINX_ENVSUBST_FILTER: DOMAIN
+    ports:
+      - '0.0.0.0:443:443'
+    volumes:
+      - ./nginx/https.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./certificates:/etc/letsencrypt:ro
+  certbot:
+    image: certbot/certbot:v4.0.0
+    profiles: [certificates]
+    volumes:
+      - ./certificates:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
