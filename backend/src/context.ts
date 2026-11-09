@@ -62,9 +62,15 @@ declare global {
     interface Request { user: User; session: Session; }
   }
 }
-export const requireAuth: RequestHandler = asyncRoute(async (req, _res, next) => {
+// Cache only within this HTTP request; subsequent requests always re-check the session.
+export async function authenticateRequest(req: Request) {
+  if (req.user && req.session) return;
   const { user, session } = await authenticateToken(req.cookies?.[config.cookieName]);
   req.user = user; req.session = session;
+}
+export const requireAuth: RequestHandler = asyncRoute(async (req, _res, next) => {
+  await authenticateRequest(req);
+  const { session } = req;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     if (req.get('X-CSRF-Token') !== session.csrfToken) throw new HttpError(403, 'CSRF 校验失败，请刷新页面后重试', 'CSRF_INVALID');
   }
