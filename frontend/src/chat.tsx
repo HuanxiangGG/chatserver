@@ -1,3 +1,6 @@
+import { AttachmentPreview } from './attachment-preview';
+import { MessageSearch } from './message-search';
+import { useSoundText } from './sound-ui';
 import { shouldSend, useSendShortcut } from './send-preference';
 import { TypingReporter } from './typing-reporter';
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -11,7 +14,6 @@ import {
   CheckCheck,
   ChevronDown,
   Copy,
-  Download,
   File,
   Image,
   Info,
@@ -111,6 +113,18 @@ export function ChatPage() {
   const drafts = useRef(new Map<string, MediaDraft>());
   const sendLock = useRef(false);
   const [sendShortcut] = useSendShortcut();
+  const t = useSoundText();
+  const [contextView, setContextView] = useState(false);
+  async function locateMessage(messageId: string) {
+    if (!id) return; const targetId = id;
+    const result = await api<{ messages: Message[]; hasMore: boolean }>(`/conversations/${id}/messages/${messageId}/context`);
+    if (activeId.current !== targetId) return;
+    followBottom.current = false; setContextView(true); setMessages(result.messages); setHasMore(result.hasMore);
+    requestAnimationFrame(() => {
+      const box = scroll.current, target = document.getElementById(`message-${messageId}`);
+      if (box && target && activeId.current === targetId) { box.scrollTop += target.getBoundingClientRect().top - box.getBoundingClientRect().top - box.clientHeight / 2; target.classList.add("located-message"); }
+    });
+  }
   const scrollBottom = () => { const box = scroll.current; if (box) box.scrollTop = box.scrollHeight; };
   const queue = (key = id) => {
     if (!key) throw Error('请先选择会话');
@@ -165,6 +179,7 @@ export function ChatPage() {
   );
   useEffect(() => {
     setMessages([]);
+    setContextView(false);
     setConversation(null);
     setDraft(id ? queue(id).text : "");
     setReply(null);
@@ -493,7 +508,7 @@ export function ChatPage() {
                 : statusText(other)}
             </span>
           </div>
-          <div className="chat-header-actions">
+          <div className="chat-header-actions"><MessageSearch key={conversation.id} conversation={conversation} locate={locateMessage} />
             <button
               className={`icon-btn ${infoOpen ? "selected" : ""}`}
               onClick={() => setInfoOpen(!infoOpen)}
@@ -513,6 +528,7 @@ export function ChatPage() {
             )}
           </div>
         </header>
+        {contextView && <button className="btn btn-secondary" onClick={() => { setContextView(false); void load(); }}>{t("backLatest")}</button>}
         <div className="chat-security-note">
           <ShieldCheck size={12} />
           <span>仅会话成员可访问聊天记录</span>
@@ -591,6 +607,7 @@ export function ChatPage() {
                     message={m}
                     conversation={conversation}
                     own={m.senderId === user!.id}
+                    onLocate={locateMessage}
                     onReply={() => {
                       setReply(m);
                       composer.current?.focus();
@@ -938,6 +955,7 @@ function MessageRow({
   onEdit,
   onRetract,
   onHide,
+  onLocate,
 }: {
   message: Message;
   conversation: Conversation;
@@ -946,7 +964,9 @@ function MessageRow({
   onEdit: () => void;
   onRetract: () => void;
   onHide: () => void;
+  onLocate: (id: string) => Promise<void>;
 }) {
+  const t = useSoundText();
   const [menu, setMenu] = useState(false),
     { toast } = useApp();
   const peers = conversation.members.filter((v) => v.userId !== m.senderId),
@@ -985,62 +1005,21 @@ function MessageRow({
           {m.replyTo && (
             <button
               className="reply-preview"
-              onClick={() =>
-                document
-                  .getElementById(`message-${m.replyTo!.id}`)
-                  ?.scrollIntoView({ behavior: "smooth", block: "center" })
-              }
+              onClick={() => void onLocate(m.replyTo!.id).catch(e => toast(t(e instanceof ApiError && e.status === 404 ? 'deletedOriginal' : 'searchError'), true))}
             >
               <Reply size={13} />
               <span>
                 <strong>{m.replyTo.sender?.displayName || "消息"}</strong>
                 <span>
                   {m.replyTo.retractedAt
-                    ? "消息已撤回"
+                    ? t("deletedOriginal")
                     : m.replyTo.content || "[文件]"}
                 </span>
               </span>
             </button>
           )}
           {m.content && <div className="message-content">{m.content}</div>}
-          {m.attachments?.map((a) => (
-            <div className="message-attachment" key={a.id}>
-              {a.mimeType.startsWith("image/") ? (
-                <a
-                  href={a.url || `/api/uploads/${a.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <img
-                    src={a.url || `/api/uploads/${a.id}`}
-                    alt={a.originalName || a.filename || "聊天图片"}
-                    loading="lazy"
-                  />
-                </a>
-              ) : (
-                <a
-                  href={a.url || `/api/uploads/${a.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="file-card"
-                >
-                  <span className="file-icon">
-                    <File size={23} />
-                  </span>
-                  <span>
-                    <strong>{a.originalName || a.filename || "文件"}</strong>
-                    <small>
-                      {a.size < 1024 * 1024
-                        ? `${Math.ceil(a.size / 1024)} KB`
-                        : `${(a.size / 1024 / 1024).toFixed(1)} MB`}{" "}
-                      · PDF 文件
-                    </small>
-                  </span>
-                  <Download size={17} />
-                </a>
-              )}
-            </div>
-          ))}
+          {m.attachments?.map(a => <AttachmentPreview key={a.id} attachment={a} />)}
         </div>
         <div className="message-footer">
           {m.editedAt && <span>已编辑</span>}

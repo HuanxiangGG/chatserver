@@ -36,6 +36,7 @@ jobs:
       - run: npm ci
       - run: npm run db:generate
       - run: npm run db:migrate
+      - run: npm run i18n:check
       - run: npm test
       - run: npm run typecheck
       - run: npm run build

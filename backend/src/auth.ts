@@ -40,6 +40,14 @@ router.post('/auth/login', asyncRoute(async (req, res) => {
   res.cookie(config.cookieName, token, { ...cookieOptions, expires: session.expiresAt }).json({ user: publicUser(user), csrfToken: session.csrfToken });
 }));
 router.get('/auth/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user), csrfToken: req.session.csrfToken }));
+const soundSchema = z.strictObject({ enabled: z.boolean(), direct: z.boolean(), group: z.boolean(), mention: z.boolean(), volume: z.number().min(0).max(1), tone: z.enum(['soft', 'bell']), dnd: z.boolean(), scheduled: z.boolean(), start: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/), end: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/) });
+router.get('/users/me/sound', requireAuth, asyncRoute(async (req, res) => {
+  const row = await prisma.userPreference.findUnique({ where: { userId: req.user.id } }); res.json({ sound: row?.sound ?? null });
+}));
+router.put('/users/me/sound', requireAuth, asyncRoute(async (req, res) => {
+  const sound = validate(soundSchema, req.body);
+  await prisma.userPreference.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, sound }, update: { sound } }); res.json({ sound });
+}));
 router.post('/auth/logout', requireAuth, asyncRoute(async (req, res) => {
   await prisma.session.update({ where: { id: req.session.id }, data: { revokedAt: new Date() } });
   await disconnectSession(req.session.id);

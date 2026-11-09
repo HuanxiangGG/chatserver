@@ -258,3 +258,45 @@ describe('Real PostgreSQL + Redis integration', () => {
     expect(last).toBe(429);
   });
 });
+
+it('persists sound preferences per account with authentication, CSRF and schema validation', async () => {
+  expect((await api().get('/users/me/sound')).status).toBe(401);
+  const sound = { enabled: true, direct: true, group: false, mention: true, volume: .35, tone: 'bell', dnd: false, scheduled: true, start: '22:00', end: '08:00' };
+  const put = (person: Person, body: unknown, csrf = person.csrfToken) => request(app).put('/api/users/me/sound').set('Origin', origin).set('Cookie', person.cookie).set('X-CSRF-Token', csrf).send(body);
+  // New accounts avoid tests that intentionally revoke earlier fixtures' sessions.
+  const a = await register('sounda'), b = await register('soundb');
+  expect((await put(a, sound, '')).status).toBe(403);
+  expect((await put(a, { ...sound, volume: 9 })).status).toBe(400);
+  expect((await put(a, { ...sound, userId: b.user.id })).status).toBe(400);
+  expect((await put(a, sound)).status).toBe(200);
+  expect((await api(a).get('/users/me/sound')).body.sound).toEqual(sound);
+  expect((await api(b).get('/users/me/sound')).body.sound).toBeNull();
+});
+
+it('searches only permitted visible messages with literal keywords, filters and stable pagination', async () => {
+  const a = await register('searcha'), b = await register('searchb');
+  await friend(a, b);
+  const created = await api(a).post('/conversations/direct', { userId: b.user.id }); expect(created.status).toBe(201);
+  const room = created.body.id, needle = `needle_${prefix}%`, ids: string[] = [];
+  for (let i = 0; i < 3; i++) { const sent = await api(a).post(`/conversations/${room}/messages`, { content: `${needle} ${i}`, clientId: randomUUID() }); expect(sent.status).toBe(201); ids.push(sent.body.id); }
+  const query = `/conversations/${room}/search?q=${encodeURIComponent(needle)}&limit=2`;
+  const first = await api(a).get(query); expect(first.status).toBe(200); expect(first.body.messages).toHaveLength(2); expect(first.body.cursor).toBeTruthy();
+  const second = await api(a).get(`${query}&cursor=${first.body.cursor}`); expect(second.status).toBe(200); expect(second.body.messages).toHaveLength(1); expect(second.body.cursor).toBeNull();
+  expect(new Set([...first.body.messages, ...second.body.messages].map((m: any) => m.id)).size).toBe(3);
+  expect((await api(a).get(`${query}&sender=${b.user.id}`)).body.messages).toEqual([]);
+  expect((await api(a).get(`${query}&type=image`)).body.messages).toEqual([]);
+  expect((await api(a).get(`${query}&type=text`)).body.messages).toHaveLength(2);
+  expect((await api(a).get(`${query}&from=2099-01-01T00:00:00.000Z`)).body.messages).toEqual([]);
+  expect((await api(a).get(`${query}&cursor=unknown`)).status).toBe(400);
+  expect((await api(a).get(`/conversations/${room}/search?limit=100`)).status).toBe(400);
+  expect((await api(a).get(`/conversations/${room}/search?q=${'x'.repeat(101)}`)).status).toBe(400);
+  expect((await api().get(query)).status).toBe(401);
+  const outsider = await prisma.user.findFirstOrThrow({ where: { username: alice.user.username } });
+  const unauthorized = await api(a).get(`/conversations/${group}/search`); expect(unauthorized.status).toBe(403);
+  expect(outsider.id).not.toBe(a.user.id);
+  const context = await api(a).get(`/conversations/${room}/messages/${ids[1]}/context`); expect(context.status).toBe(200); expect(context.body.messages.some((m: any) => m.id === ids[1])).toBe(true);
+  expect((await api(a).get(`/conversations/${room}/messages/${message}/context`)).status).toBe(404);
+  expect((await api(a).delete(`/messages/${ids[0]}`)).status).toBe(200);
+  expect((await api(a).get(`/conversations/${room}/messages/${ids[0]}/context`)).status).toBe(404);
+  expect((await api(a).get(`/conversations/${room}/search?q=${encodeURIComponent(needle)}`)).body.messages).toHaveLength(2);
+});

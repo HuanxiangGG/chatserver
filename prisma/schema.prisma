@@ -21,6 +21,7 @@ model User {
   lastSeenAt       DateTime             @default(now())
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
+  preference       UserPreference?
   sessions         Session[]
   friendships      Friendship[]         @relation("FriendshipUser")
   friends          Friendship[]         @relation("FriendshipFriend")
@@ -126,6 +127,8 @@ model Message {
 
   @@unique([senderId, clientId])
   @@index([conversationId, createdAt, id])
+  @@index([conversationId, senderId, createdAt, id])
+  @@index([content(ops: raw("gin_trgm_ops"))], type: Gin, map: "Message_content_trgm_idx")
 }
 
 model MessageAttachment {
@@ -285,4 +288,11 @@ model ServerInvite {
   server    Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   @@index([serverId, createdAt])
+}
+
+model UserPreference {
+  userId String @id
+  sound Json
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

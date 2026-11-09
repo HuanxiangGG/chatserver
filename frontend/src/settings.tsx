@@ -1,3 +1,4 @@
+import { SoundSettingsPanel } from './sound-ui';
 import { useSendShortcut } from './send-preference';
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -66,7 +67,7 @@ export function SettingsPage() {
               屏蔽列表 <span>{blocks.length}</span>
             </a>
           </nav>
-          <div className="settings-main">
+          <div className="settings-main"><SoundSettingsPanel />
             <section className="settings-section"><h2>消息发送快捷键</h2><label>发送方式<select value={sendShortcut} onChange={e => setSendShortcut(e.target.value === "modifier" ? "modifier" : "enter")}><option value="enter">Enter 发送，Shift + Enter 换行</option><option value="modifier">Ctrl / ⌘ + Enter 发送，Enter 换行</option></select></label></section>
             <section className="settings-section" id="account">
               <h2>账号与状态</h2>

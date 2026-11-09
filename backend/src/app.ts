@@ -7,6 +7,7 @@ import { config, isTrustedOrigin, prisma, redis, checkOrigin, consumeLimit, auth
 import auth from './auth.js';
 import social from './social.js';
 import chat from './chat.js';
+import messageSearch from './message-search.js';
 import uploads from './uploads.js';
 import admin from './admin.js';
 import communities from './communities.js';
@@ -41,7 +42,7 @@ app.use('/api', (req, _res, next) => {
   if (config.cookieSecure && !req.secure) return next(new HttpError(503, '服务器代理配置错误：未识别 HTTPS，请检查 TRUST_PROXY 和 X-Forwarded-Proto', 'PROXY_HTTPS_REQUIRED'));
   next();
 });
-app.use('/api', auth, communities, chat, uploads, admin, social);
+app.use('/api', auth, communities, chat, messageSearch, uploads, admin, social);
 app.use((_req, res) => res.status(404).json({ error: '接口不存在' }));
 const errors: ErrorRequestHandler = (error, _req, res, _next) => {
   if (error instanceof HttpError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }

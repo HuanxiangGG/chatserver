@@ -115,6 +115,7 @@ export async function initRealtime(server: HttpServer) {
   io.on('connection', socket => {
     const data = socket.data.auth as { token: string; userId: string; sessionId: string };
     connections.set(socket.id, data);
+    socket.emit('session:ready', { serverTime: Date.now() });
     void socket.join([userRoom(data.userId), sessionRoom(data.sessionId)]);
     void (async () => {
       await touch(data.userId, socket.id);

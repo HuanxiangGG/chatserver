@@ -1,0 +1,87 @@
+import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { api, json } from './api';
+import { useApp } from './state';
+import type { Message, Conversation } from './types';
+import { SoundPlayer, soundSessionTimes, defaultSound, normalizeSound, type SoundSettings } from './sound';
+import dictionaries from './locales/sound.json';
+type Key = keyof typeof dictionaries.en;
+const listeners = new Set<() => void>();
+const notify = () => listeners.forEach(fn => fn());
+const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
+const write = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* Local state still works. */ } };
+let locale: 'zh-CN' | 'en' = read('harbor.language') === 'en' ? 'en' : 'zh-CN';
+export const soundLocale = () => locale;
+let settings = (() => { try { return normalizeSound(JSON.parse(read('harbor.sound.guest') || '{}')); } catch { return { ...defaultSound }; } })();
+export function useSoundText() {
+ const [, update] = useState(0);
+ useEffect(() => { const fn = () => update(v => v + 1); listeners.add(fn); return () => { listeners.delete(fn); }; }, []);
+ return (key: Key, vars: Record<string, string | number> = {}) => dictionaries[locale][key].replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''));
+}
+let player: SoundPlayer | null = null;
+let blocked = false;
+let syncing = false;
+let syncFailed = false;
+export function SoundRuntime() {
+ const { user, socket, conversations } = useApp(), location = useLocation(), context = useRef({ user, conversations, path: location.pathname });
+ context.current = { user, conversations, path: location.pathname };
+ useEffect(() => {
+  const instance = new SoundPlayer(undefined, () => { blocked = true; notify(); }); player = instance;
+  try { instance.preload(); } catch { blocked = true; notify(); }
+  return () => { instance.dispose(); if (player === instance) player = null; };
+ }, []);
+ useEffect(() => {
+  let live = true; const id = user?.id;
+  syncFailed = false;
+  if (!id) { try { settings = normalizeSound(JSON.parse(read('harbor.sound.guest') || '{}')); } catch { settings = { ...defaultSound }; } syncing = false; notify(); return; }
+  syncing = true; notify();
+  void api<{ sound: unknown }>('/users/me/sound').then(async result => {
+   if (!live) return;
+   // Import guest preferences once only when the account has no saved preferences.
+   if (result.sound) settings = normalizeSound(result.sound);
+   else { settings = normalizeSound(JSON.parse(read('harbor.sound.guest') || '{}')); await api('/users/me/sound', json('PUT', settings)); }
+   if (live) { write(`harbor.sound.${id}`, JSON.stringify(settings)); notify(); }
+  }).catch(() => { if (live) syncFailed = true; notify(); }).finally(() => { if (live) syncing = false; notify(); });
+  return () => { live = false; };
+ }, [user?.id]);
+ useEffect(() => {
+  if (!socket) return;
+  const connected = () => player?.connected(soundSessionTimes.get(socket) ?? Infinity);
+  const ready = (data: { serverTime: number }) => { if (Number.isFinite(data.serverTime)) player?.connected(data.serverTime); };
+  socket.on('session:ready', ready);
+  if (socket.connected) connected(); socket.on('connect', connected);
+  const receive = async (m: Message) => {
+   const c = context.current, current = c.user; if (!current || !player || syncing || syncFailed) return;
+   let conversation = c.conversations.find((v: Conversation) => v.id === m.conversationId);
+   if (!conversation) { try { conversation = await api<Conversation>(`/conversations/${m.conversationId}`); } catch { return; } }
+   if (context.current.user?.id !== current.id) return;
+   // Resolve only current-user accessible conversations; never infer type from untrusted text.
+   if (!conversation) return;
+   const active = document.visibilityState === 'visible' && document.hasFocus() && context.current.path.endsWith(`/${m.conversationId}`);
+   void player.receive(m, settings, { userId: current.id, username: current.username, type: conversation.type, active }).catch(() => {});
+  };
+  socket.on('message:new', receive);
+  return () => { socket.off('connect', connected); socket.off('session:ready', ready); socket.off('message:new', receive); };
+ }, [socket]);
+ return null;
+}
+export function SoundSettingsPanel() {
+ const { user } = useApp(), t = useSoundText(), [, refresh] = useState(0), [status, setStatus] = useState<Key | null>(null), [busy, setBusy] = useState(false);
+ const owner = useRef(user?.id); owner.current = user?.id;
+ useEffect(() => {
+  const fn = () => refresh(v => v + 1); listeners.add(fn); return () => { listeners.delete(fn); };
+ }, []);
+ const change = (patch: Partial<SoundSettings>) => { settings = normalizeSound({ ...settings, ...patch }); write(user ? `harbor.sound.${user.id}` : 'harbor.sound.guest', JSON.stringify(settings)); setStatus(null); notify(); };
+ async function enable() { const ok = await player?.unlock(); blocked = !ok; notify(); if (ok) change({ enabled: true }); }
+ return <section className="settings-section sound-settings"><h2>{t('title')}</h2><label>{t('language')}<select value={locale} onChange={e => { locale = e.target.value === 'en' ? 'en' : 'zh-CN'; write('harbor.language', locale); notify(); }}><option value="zh-CN">{t("chinese")}</option><option value="en">{t("english")}</option></select></label>
+ {!player?.ready && <button type="button" className="btn btn-primary" disabled={syncing} onClick={() => void enable()}>{t('enable')}</button>}
+ {syncFailed && <p role="status">{t('failed')}</p>}
+ {blocked && <p role="status">{t('blocked')}</p>}
+ {(['enabled','direct','group','mention','dnd','scheduled'] as const).map(key => <label className="setting-row" key={key}><span>{t(key === 'scheduled' ? 'schedule' : key)}</span><span>{t(settings[key] ? 'on' : 'off')} <input type="checkbox" checked={settings[key]} disabled={busy || syncing} onChange={e => change({ [key]: e.target.checked })} /></span></label>)}
+ <label>{t('volume', { volume: Math.round(settings.volume * 100) })}<input type="range" min="0" max="100" value={Math.round(settings.volume * 100)} disabled={busy || syncing} onChange={e => change({ volume: Number(e.target.value) / 100 })} /></label>
+ <label>{t('tone')}<select value={settings.tone} disabled={busy || syncing} onChange={e => change({ tone: e.target.value === 'bell' ? 'bell' : 'soft' })}><option value="soft">{t('soft')}</option><option value="bell">{t('bell')}</option></select></label>
+ <div className="sound-times">{(['start','end'] as const).map(key => <label key={key}>{t(key)}<input type="time" value={settings[key]} disabled={busy || syncing} onChange={e => change({ [key]: e.target.value })} /></label>)}</div><p>{t('hint')}</p>
+ <div className="sound-actions"><button type="button" className="btn btn-secondary" disabled={busy || syncing} onClick={async () => { const ok = await player?.test(settings); setStatus(ok ? 'played' : 'blocked'); notify(); }}>{t('test')}</button><button type="button" className="btn btn-primary" disabled={busy || syncing} onClick={async () => { const id = user?.id; setBusy(true); try { if (id) await api('/users/me/sound', json('PUT', settings)); if (owner.current === id) setStatus('saved'); } catch { if (owner.current === id) setStatus('failed'); } finally { setBusy(false); } }}>{t('save')}</button></div>
+ <p aria-live="polite">{busy || syncing ? t('loading') : status ? t(status) : ''}</p></section>;
+}
+export function SoundEntry() { const t = useSoundText(), [open, setOpen] = useState(false); return <div className="sound-entry"><button type="button" className="btn btn-secondary" onClick={() => { setOpen(!open); if (!player?.ready && !syncing) void player?.unlock().then(ok => { blocked = !ok; notify(); }); }} aria-expanded={open}>{t(player?.ready ? 'settings' : 'enable')}</button>{open && <SoundSettingsPanel />}</div>; }

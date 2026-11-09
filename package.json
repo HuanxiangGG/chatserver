@@ -18,7 +18,8 @@
     "db:generate": "prisma generate --schema prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
     "db:seed": "npm run seed -w backend",
-    "admin:create": "npm run admin:create -w backend"
+    "admin:create": "npm run admin:create -w backend",
+    "i18n:check": "node scripts/i18n-check.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

@@ -1,3 +1,4 @@
+import { SoundRuntime, SoundEntry } from './sound-ui';
 import React from "react";
 import ReactDOM from "react-dom/client";
 import {
@@ -39,6 +40,7 @@ function App() {
   return (
     <BrowserRouter>
       <AppProvider>
+        <SoundRuntime /><SoundEntry />
         <Routes>
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/login" element={<AuthPage key="login" mode="login" />} />

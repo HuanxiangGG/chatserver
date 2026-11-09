@@ -1,4 +1,5 @@
 import { coalescedRefresh } from './coalesced-refresh';
+import { soundSessionTimes } from './sound';
 import {
   createContext,
   useCallback,
@@ -165,7 +166,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reconnectionDelayMax: 10000,
     });
     setSocket(client);
+    client.on('session:ready', (data: { serverTime: number }) => {
+      if (Number.isFinite(data.serverTime)) soundSessionTimes.set(client, data.serverTime);
+    });
     client.on("connect", () => {
+      soundSessionTimes.delete(client);
       setConnected(true);
       setSync((x) => x + 1);
       void refresh().catch(() => {});
