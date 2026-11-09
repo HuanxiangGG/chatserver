@@ -41,6 +41,15 @@ async function announce(userId: string, status: string, lastSeenAt: Date) {
 async function touch(userId: string, socketId: string) {
   await redis.multi().zadd(key(userId), Date.now() + ttl, socketId).pexpire(key(userId), ttl * 2).sadd(activeUsersKey, userId).exec();
 }
+async function markConnected(userId: string) {
+  const users = await prisma.$queryRaw<Array<{ status: string; lastSeenAt: Date }>>`
+    UPDATE "User" SET "status" = CASE WHEN "status" = 'BUSY' THEN 'BUSY' ELSE 'ONLINE' END,
+      "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "id" = ${userId} AND "banned" = false
+    RETURNING "status", "lastSeenAt"
+  `;
+  return users[0];
+}
 async function updateOffline(userId: string) {
   const count = Number(await redis.eval(`redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1]); local n=redis.call('ZCARD', KEYS[1]); if n==0 then redis.call('SREM', KEYS[2], ARGV[2]); end; return n`, 2, key(userId), activeUsersKey, Date.now(), userId));
   if (count === 0) {
@@ -48,8 +57,8 @@ async function updateOffline(userId: string) {
     const changed = await prisma.user.updateMany({ where: { id: userId, status: { not: 'OFFLINE' } }, data: { status: 'OFFLINE', lastSeenAt } });
     // A concurrent fresh connection wins over this cleanup.
     if (await redis.zcount(key(userId), Date.now(), '+inf') > 0) {
-      await prisma.user.updateMany({ where: { id: userId, status: 'OFFLINE' }, data: { status: 'ONLINE' } });
-      await announce(userId, 'ONLINE', lastSeenAt);
+      const connected = await markConnected(userId);
+      if (connected) await announce(userId, connected.status, connected.lastSeenAt);
     } else if (changed.count) await announce(userId, 'OFFLINE', lastSeenAt);
   }
 }
@@ -106,10 +115,9 @@ export async function initRealtime(server: HttpServer) {
     void (async () => {
       await touch(data.userId, socket.id);
       if (!socket.connected) { await redis.zrem(key(data.userId), socket.id); await updateOffline(data.userId); return; }
-      const old = await prisma.user.findUniqueOrThrow({ where: { id: data.userId }, select: { status: true, lastSeenAt: true } });
-      const status = old.status === 'BUSY' ? 'BUSY' : 'ONLINE';
-      await prisma.user.update({ where: { id: data.userId }, data: { status } });
-      if (socket.connected) await announce(data.userId, status, old.lastSeenAt);
+      const connected = await markConnected(data.userId);
+      if (!connected) throw new HttpError(401, '登录已失效');
+      if (socket.connected) await announce(data.userId, connected.status, connected.lastSeenAt);
       else await updateOffline(data.userId);
     })().catch(error => reject(socket, error));
     socket.on('typing', async (raw: unknown, ack?: unknown) => {
