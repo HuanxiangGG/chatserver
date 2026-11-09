@@ -27,6 +27,6 @@
 - Docker Compose 2.39.4 基础+Caddy配置校验、脚本 bash -n、git diff --check：通过。
 - 浏览器 390×844 注册中文即时错误、错误保留字段、实际登录、手机长消息与列表开关；1440×960 三栏及亮暗主题检查通过。手机聊天文档宽度=390，桌面宽度=1440，均无横向溢出。测试账户只在本机隔离数据库。
 
-远端 Linux 容器验收结果以当前提交的 GitHub Actions 为准，旧 VERIFICATION.md 中的成功记录属于上一版。未执行生产更新，没有读取或改动生产数据库/上传卷；真实 Caddy HTTPS Cookie 和公网 WebSocket 仍需更新后用浏览器确认。生产备份恢复演练未执行。
+远端 Linux 验收也已通过：[GitHub Actions 42566243428](https://github.com/HuanxiangGG/chatserver/actions/runs/42566243428)，验证代码提交 `4fda451fe5ee8c6192897146813a6862a5aae57b`。Ubuntu 上 44 项测试、类型检查、构建、Docker 镜像、全部四个容器健康、Nginx 配置及经代理的 Cookie/CSRF/消息持久化/WebSocket 收发通过。CI 通过可信转发头模拟 Caddy 的 HTTPS 终止，没有签发证书或运行生产 Caddy。旧 VERIFICATION.md 中的成功记录属于上一版。未执行生产更新，没有读取或改动生产数据库/上传卷；真实 Caddy HTTPS Cookie 和公网 WebSocket 仍需更新后用浏览器确认。生产备份恢复演练未执行。
 
 部署、数据核对和回滚注意事项见 README 的“现有 Caddy 生产部署”章节。不要改变 Compose 项目名，不覆盖现有环境文件，不删除或重建数据卷。
