@@ -126,7 +126,7 @@ export async function initRealtime(server: HttpServer) {
     })().catch(error => reject(socket, error));
     socket.on('typing', async (raw: unknown, ack?: unknown) => {
       try {
-        await fresh(socket); await consumeLimit(`typing:${data.userId}`, 120, 60);
+        await fresh(socket);
         const input = validate(z.object({ conversationId: z.string().min(1).max(100), typing: z.boolean() }), raw);
         const users = await eventMembers(input.conversationId, data.userId);
         emitUsers(users.filter(id => id !== data.userId), 'typing', { ...input, userId: data.userId }); respond(ack, { ok: true });

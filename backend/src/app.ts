@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { Prisma } from '@prisma/client';
-import { config, isTrustedOrigin, prisma, redis, checkOrigin, consumeLimit, asyncRoute, HttpError } from './context.js';
+import { config, isTrustedOrigin, prisma, redis, checkOrigin, consumeLimit, authenticateRequest, asyncRoute, HttpError } from './context.js';
 import auth from './auth.js';
 import social from './social.js';
 import chat from './chat.js';
@@ -25,7 +25,18 @@ app.get('/api/health', asyncRoute(async (_req, res) => {
     res.json({ status: 'ok' });
   } catch { res.status(503).json({ status: 'unavailable' }); }
 }));
-app.use('/api', asyncRoute(async (req, _res, next) => { await consumeLimit(`http:${req.ip}`, 600, 60); next(); }));
+app.use('/api', asyncRoute(async (req, _res, next) => {
+  // Shared NAT/proxy addresses must not pool the traffic of signed-in chat users.
+  // A cookie is not proof of identity: exempt only a currently valid DB session.
+  if (req.cookies?.[config.cookieName]) {
+    try { await authenticateRequest(req); }
+    catch (error) { if (!(error instanceof HttpError && error.status === 401)) throw error; }
+  }
+  // Stale cookies can still reach login. Endpoint-specific login/upload/admin
+  // limits remain independent of this anonymous request budget.
+  if (!req.user) await consumeLimit(`http:${req.ip}`, 600, 60);
+  next();
+}));
 app.use('/api', (req, _res, next) => {
   if (config.cookieSecure && !req.secure) return next(new HttpError(503, '服务器代理配置错误：未识别 HTTPS，请检查 TRUST_PROXY 和 X-Forwarded-Proto', 'PROXY_HTTPS_REQUIRED'));
   next();

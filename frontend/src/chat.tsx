@@ -1,3 +1,4 @@
+import { TypingReporter } from './typing-reporter';
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -100,7 +101,7 @@ export function ChatPage() {
     composer = useRef<HTMLTextAreaElement>(null),
     file = useRef<HTMLInputElement>(null),
     end = useRef<HTMLDivElement>(null),
-    typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
+    typingReporter = useRef<TypingReporter | null>(null),
     activeId = useRef(id),
     readIds = useRef(new Set<string>()),
     task = useTask(),
@@ -245,7 +246,6 @@ export function ChatPage() {
       socket.off("message:updated", onUpdate);
       socket.off("typing", onTyping);
       socket.off("receipt:updated", onReceipt);
-      socket.emit("typing", { conversationId: id, typing: false });
     };
   }, [socket, id, user?.id]);
   const latestId = messages.at(-1)?.id;
@@ -320,16 +320,21 @@ export function ChatPage() {
       setOlderLoading(false);
     }
   }
+  useEffect(() => {
+    if (!id || !socket) return;
+    const reporter = new TypingReporter(typing => {
+      if (socket.connected) socket.emit('typing', { conversationId: id, typing });
+    });
+    typingReporter.current = reporter;
+    return () => {
+      reporter.stop();
+      if (typingReporter.current === reporter) typingReporter.current = null;
+    };
+  }, [socket, id]);
   function updateDraft(value: string) {
     setDraft(value);
     if (id) queue().text = value;
-    if (!id || !socket) return;
-    socket.emit("typing", { conversationId: id, typing: !!value });
-    if (typingTimer.current) clearTimeout(typingTimer.current);
-    typingTimer.current = setTimeout(
-      () => socket.emit("typing", { conversationId: id, typing: false }),
-      1500,
-    );
+    typingReporter.current?.update(!!value);
   }
   async function send(e?: FormEvent) {
     e?.preventDefault();
@@ -337,6 +342,7 @@ export function ChatPage() {
     if (!id || sendLock.current || (!draft.trim() && !queue().items.length)) return;
     const targetId = id, pending = queue(), content = draft.trim(), replyToId = reply?.id;
     sendLock.current = true;
+    typingReporter.current?.stop();
     setSending(true);
     try {
       setUploading(!!pending.items.length);
@@ -353,7 +359,6 @@ export function ChatPage() {
         end.current?.scrollIntoView({ behavior: 'smooth' });
         if (composer.current) { composer.current.style.height = 'auto'; composer.current.focus(); }
       }
-      socket?.emit('typing', { conversationId: targetId, typing: false });
       void refresh().catch(() => {});
     } catch (error) {
       if (error instanceof ApiError && error.status >= 400 && error.status < 500) pending.rejected();
@@ -695,7 +700,7 @@ export function ChatPage() {
                 }
               }}
               onBlur={() =>
-                socket?.emit("typing", { conversationId: id, typing: false })
+                typingReporter.current?.stop()
               }
               placeholder={!writable ? "此频道只读，或你正在被禁言" : `发送消息到 ${title}…`}
               aria-label="消息内容"

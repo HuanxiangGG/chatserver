@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 聊天频率修复（2026-11-09）
+
+- 移除聊天发送和 Socket 输入提示的固定次数限制；有效登录会话不再占用共享 IP 的匿名请求额度，避免正常聊天和同网用户互相触发 429。
+- 仅按当前数据库会话验证结果豁免；保留逐请求会话验证、Origin、CSRF、会话/频道权限和登录、上传等独立限制。
+- 输入提示按状态与时间续报，停止时取消定时器；合并消息/会话/回执导致的并行刷新，保留加载期间的新事件同步和失败重试。
+- 新增旧阈值、共享 IP、消息幂等、Socket 权限及前端刷新/输入提示回归；不改迁移、Compose、Caddy、环境变量或持久卷。
+
 ## Unreleased — 社区与文字频道核心（2026-11-09）
 
 - 新增 Server/ServerMember/ServerBan、Channel/ChannelGrant/ChannelCategory、ServerInvite；频道关联现有 Conversation，不复制消息存储。

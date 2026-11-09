@@ -187,7 +187,6 @@ router.get('/conversations/:id/messages', asyncRoute(async (req, res) => {
 }));
 router.post('/conversations/:id/messages', asyncRoute(async (req, res) => {
   const id = validate(idSchema, req.params.id); await writable(id, req.user.id);
-  await consumeLimit(`message:${req.user.id}`, 60, 60);
   const data = validate(z.object({ content: z.string().trim().max(4000).default(''), replyToId: idSchema.optional(), attachmentIds: z.array(idSchema).max(5).default([]), clientId: z.string().min(8).max(100) }), req.body);
   if (!data.content && !data.attachmentIds.length) throw new HttpError(400, '消息不能为空');
   const prior = await prisma.message.findUnique({ where: { senderId_clientId: { senderId: req.user.id, clientId: data.clientId } }, include: messageInclude });

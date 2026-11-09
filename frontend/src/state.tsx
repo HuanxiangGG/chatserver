@@ -1,8 +1,10 @@
+import { coalescedRefresh } from './coalesced-refresh';
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -79,7 +81,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .catch(e => { if (!(e instanceof ApiError && e.status === 401)) toast(e.message || "检查登录状态失败，请刷新重试", true); })
       .finally(() => setLoading(false));
   }, [reloadUser, toast]);
-  const refresh = useCallback(async () => {
+  const refreshPass = useCallback(async () => {
     if (!user) return;
     try {
       const [c, f, r, communities] = await Promise.all([
@@ -121,7 +123,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setToken("");
         setUser(null);
         setCommunities([]);
-    setConversations([]);
+        setConversations([]);
         setFriends([]);
         setRequests({ incoming: [], outgoing: [] });
         deliveredIds.current.clear();
@@ -129,6 +131,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw e;
     }
   }, [user?.id]);
+  const refresh = useMemo(() => coalescedRefresh(refreshPass), [refreshPass]);
   const logout = useCallback(async () => {
     try {
       await api("/auth/logout", json("POST"));
