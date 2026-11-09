@@ -4893,3 +4893,9 @@ input[aria-invalid="true"] { border-color: var(--danger, #d64252); }
 .channel-symbol { width: 40px; height: 40px; display: grid; place-items: center; color: var(--muted); flex-shrink: 0; }.channel-symbol-large { width: 86px; height: 86px; border-radius: 24px; background: var(--accent-soft); color: var(--accent); margin: 0 auto; }
 
 @media (max-width: 767px) { .mobile-sidebar-toggle { top: 82px; bottom: auto; right: 12px; padding: 5px 8px; font-size: 10px; }.community-overview .mobile-back { margin-bottom: 20px; } }
+
+/* Keep the composer outside the independently scrolling message viewport. */
+.messages-scroll { overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.composer-wrap, .composer, .composer > textarea { min-width: 0; max-width: 100%; }
+.composer > textarea { width: 100%; }
+.send-button { flex-shrink: 0; }

@@ -1,3 +1,4 @@
+import { useSendShortcut } from './send-preference';
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -17,6 +18,7 @@ import { useApp } from "./state";
 import type { User } from "./types";
 import { Avatar, Dialog, Empty, PageHeading, useTask } from "./ui";
 export function SettingsPage() {
+  const [sendShortcut, setSendShortcut] = useSendShortcut();
   const { user, theme, setTheme, reloadUser, socket, logout, toast } = useApp(),
     [blocks, setBlocks] = useState<User[]>([]),
     [busy, setBusy] = useState(false),
@@ -65,6 +67,7 @@ export function SettingsPage() {
             </a>
           </nav>
           <div className="settings-main">
+            <section className="settings-section"><h2>消息发送快捷键</h2><label>发送方式<select value={sendShortcut} onChange={e => setSendShortcut(e.target.value === "modifier" ? "modifier" : "enter")}><option value="enter">Enter 发送，Shift + Enter 换行</option><option value="modifier">Ctrl / ⌘ + Enter 发送，Enter 换行</option></select></label></section>
             <section className="settings-section" id="account">
               <h2>账号与状态</h2>
               <p>管理个人资料，让朋友知道你是否方便聊天。</p>

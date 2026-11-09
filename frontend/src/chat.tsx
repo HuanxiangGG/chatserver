@@ -1,3 +1,4 @@
+import { shouldSend, useSendShortcut } from './send-preference';
 import { TypingReporter } from './typing-reporter';
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
@@ -104,10 +105,13 @@ export function ChatPage() {
     typingReporter = useRef<TypingReporter | null>(null),
     activeId = useRef(id),
     readIds = useRef(new Set<string>()),
+    followBottom = useRef(true),
     task = useTask(),
     navigate = useNavigate();
   const drafts = useRef(new Map<string, MediaDraft>());
   const sendLock = useRef(false);
+  const [sendShortcut] = useSendShortcut();
+  const scrollBottom = () => { const box = scroll.current; if (box) box.scrollTop = box.scrollHeight; };
   const queue = (key = id) => {
     if (!key) throw Error('请先选择会话');
     if (!drafts.current.has(key)) drafts.current.set(key, new MediaDraft());
@@ -119,6 +123,7 @@ export function ChatPage() {
   const load = useCallback(
     async (quiet = false) => {
       if (!id) return;
+      if (!quiet) followBottom.current = true;
       if (!quiet) setLoading(true);
       setError("");
       try {
@@ -146,7 +151,7 @@ export function ChatPage() {
         setHasMore(result.hasMore);
         if (!quiet)
           setTimeout(
-            () => end.current?.scrollIntoView({ behavior: "instant" }),
+            () => { if (activeId.current === id && followBottom.current) scrollBottom(); },
             50,
           );
       } catch (e) {
@@ -178,20 +183,9 @@ export function ChatPage() {
     if (!socket || !id) return;
     const onMessage = (message: Message) => {
       if (message.conversationId !== id) return;
-      const nearBottom =
-        !scroll.current ||
-        scroll.current.scrollHeight -
-          scroll.current.scrollTop -
-          scroll.current.clientHeight <
-          160;
       setMessages((old) =>
         old.some((m) => m.id === message.id) ? old : old.concat(message),
       );
-      if (nearBottom || message.senderId === user!.id)
-        setTimeout(
-          () => end.current?.scrollIntoView({ behavior: "smooth" }),
-          50,
-        );
     };
     const onUpdate = (message: Message) => {
       if (message.conversationId === id)
@@ -249,6 +243,7 @@ export function ChatPage() {
     };
   }, [socket, id, user?.id]);
   const latestId = messages.at(-1)?.id;
+  useEffect(() => { if (followBottom.current) scrollBottom(); }, [latestId]);
   useEffect(() => {
     if (!id || !latestId) return;
     const read = () => {
@@ -301,18 +296,21 @@ export function ChatPage() {
     if (!messages[0] || !id || olderLoading) return;
     setOlderLoading(true);
     const height = scroll.current?.scrollHeight || 0;
+    const previousTop = scroll.current?.scrollTop || 0;
+    const targetId = id;
     try {
       const result = await api<{ messages: Message[]; hasMore: boolean }>(
         `/conversations/${id}/messages?before=${encodeURIComponent(messages[0].id)}`,
       );
+      if (activeId.current !== targetId) return;
       setMessages((old) => [
         ...result.messages.filter((m) => !old.some((v) => v.id === m.id)),
         ...old,
       ]);
       setHasMore(result.hasMore);
       requestAnimationFrame(() => {
-        if (scroll.current)
-          scroll.current.scrollTop = scroll.current.scrollHeight - height;
+        if (scroll.current && activeId.current === targetId)
+          scroll.current.scrollTop = previousTop + scroll.current.scrollHeight - height;
       });
     } catch (e) {
       toast((e as Error).message, true);
@@ -356,8 +354,8 @@ export function ChatPage() {
       if (activeId.current === targetId) {
         setMessages(old => old.some(m => m.id === result.id) ? old : old.concat(result));
         setDraft(''); setReply(null); renderDraft(v => v + 1);
-        end.current?.scrollIntoView({ behavior: 'smooth' });
-        if (composer.current) { composer.current.style.height = 'auto'; composer.current.focus(); }
+        if (composer.current) composer.current.style.height = 'auto';
+        // Focus stays on the same enabled textarea; never steal it back from history or attachments.
       }
       void refresh().catch(() => {});
     } catch (error) {
@@ -523,6 +521,8 @@ export function ChatPage() {
           className="messages-scroll"
           ref={scroll}
           onScroll={() => {
+            const box = scroll.current;
+            if (box) followBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 160;
             if (
               scroll.current &&
               scroll.current.scrollTop < 60 &&
@@ -680,7 +680,9 @@ export function ChatPage() {
           <div className="composer">
             <textarea
               ref={composer}
-              disabled={!writable || sending || !!media?.delivery}
+              disabled={!writable}
+              readOnly={sending || !!media?.delivery}
+              aria-busy={sending}
               onPaste={e => { const images = clipboardImages(e.clipboardData.items); if (images.length) { e.preventDefault(); upload(images); } }}
               rows={1}
               value={draft}
@@ -691,9 +693,7 @@ export function ChatPage() {
               }}
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
                 if (
-                  e.key === "Enter" &&
-                  !e.shiftKey &&
-                  !e.nativeEvent.isComposing
+                  shouldSend(e, sendShortcut)
                 ) {
                   e.preventDefault();
                   void send();
@@ -744,11 +744,12 @@ export function ChatPage() {
               </div>
               <div>
                 <span className="send-hint">
-                  回车发送 <kbd>↵</kbd>
+                  {sendShortcut === "enter" ? "回车发送" : "Ctrl / ⌘ + Enter 发送"} <kbd>↵</kbd>
                 </span>
                 <button
                   type="submit"
                   className="send-button"
+                  onPointerDown={e => { if (document.activeElement === composer.current) e.preventDefault(); }}
                   disabled={
                     !writable ||
                     sending ||
