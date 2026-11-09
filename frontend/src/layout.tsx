@@ -1,3 +1,4 @@
+import { translate as tr, useLanguage } from './i18n';
 import { CommunityDialog, CommunitySidebar } from './communities';
 import { useState } from "react";
 import {
@@ -36,13 +37,14 @@ import {
 } from "./ui";
 import type { Conversation } from "./types";
 export function CreateGroup({ onClose }: { onClose: () => void }) {
+  useLanguage();
   const { friends, refresh } = useApp(),
     [selected, setSelected] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     navigate = useNavigate(),
     task = useTask();
   return (
-    <Dialog title="创建一个新的群聊" onClose={onClose}>
+    <Dialog title={tr('screen324')} onClose={onClose}>
       <form
         className="form-stack"
         onSubmit={async (e) => {
@@ -67,27 +69,25 @@ export function CreateGroup({ onClose }: { onClose: () => void }) {
           }
         }}
       >
-        <p className="muted">把合拍的人聚在一起，开始新的对话。</p>
+        <p className="muted">{tr('screen325')}</p>
         <label>
-          群名称
-          <input
+          {tr('screen228')}<input
             name="name"
             required
             maxLength={80}
-            placeholder="给这个空间起个名字"
+            placeholder={tr('screen326')}
           />
         </label>
         <label>
-          群简介
-          <textarea
+          {tr('screen229')}<textarea
             name="description"
             maxLength={500}
-            placeholder="这个群聊是关于什么的？"
+            placeholder={tr('screen327')}
             rows={2}
           />
         </label>
         <label>
-          邀请好友 <small>已选择 {selected.length} 人</small>
+          {tr('screen328')}<small>{tr('screen329')}{selected.length} {tr('screen330')}</small>
         </label>
         <div className="pick-list">
           {friends.length ? (
@@ -116,12 +116,11 @@ export function CreateGroup({ onClose }: { onClose: () => void }) {
             ))
           ) : (
             <p className="muted">
-              还没有好友。请先添加好友，再邀请他们一起创建群聊。
-            </p>
+              {tr('screen331')}</p>
           )}
         </div>
         <button className="btn btn-primary" disabled={busy || !selected.length}>
-          {busy ? "正在创建…" : "创建群聊"}
+          {busy ? tr('screen332') : tr('screen333')}
           <ArrowUpRight size={16} />
         </button>
       </form>
@@ -129,6 +128,7 @@ export function CreateGroup({ onClose }: { onClose: () => void }) {
   );
 }
 export function Layout() {
+  useLanguage();
   const { user, logout, requests, connected, theme, setTheme, conversations, communities } =
       useApp(),
     [communityDialog, setCommunityDialog] = useState<'create' | 'join' | null>(null),
@@ -142,36 +142,36 @@ export function Layout() {
     active = isCommunity ? (location.pathname.endsWith('/settings') ? 'settings' : location.pathname.split('/')[4]) : location.pathname.split("/")[2];
   return (
     <div className={`app-layout ${sidebarOpen ? 'sidebar-is-open' : ''}`} onKeyDown={e => { if (e.key === 'Escape') setSidebarOpen(false); }}>
-      {onChat && active && <button className="mobile-sidebar-toggle btn btn-secondary" aria-label={sidebarOpen ? '关闭消息列表' : '打开消息列表'} aria-expanded={sidebarOpen} aria-controls="conversation-sidebar" onClick={() => setSidebarOpen(!sidebarOpen)}>{sidebarOpen ? '关闭列表' : '消息列表'}</button>}
-      {sidebarOpen && <button className="sidebar-scrim" aria-label="关闭消息列表" onClick={() => setSidebarOpen(false)} />}
+      {onChat && active && <button className="mobile-sidebar-toggle btn btn-secondary" aria-label={sidebarOpen ? tr('screen334') : tr('screen335')} aria-expanded={sidebarOpen} aria-controls="conversation-sidebar" onClick={() => setSidebarOpen(!sidebarOpen)}>{sidebarOpen ? tr('screen336') : tr('screen337')}</button>}
+      {sidebarOpen && <button className="sidebar-scrim" aria-label={tr('screen334')} onClick={() => setSidebarOpen(false)} />}
       <aside className="nav-rail">
-        <Link to="/chat" aria-label="泊岸首页" className="rail-brand">
+        <Link to="/chat" aria-label={tr('screen338')} className="rail-brand">
           <Brand compact />
         </Link>
         <div className="rail-divider" />
-        <nav aria-label="主导航">
+        <nav aria-label={tr('screen339')}>
           <NavLink
             to="/chat"
-            title="聊天"
+            title={tr('screen340')}
             className={({ isActive }) =>
               `rail-link ${isActive ? "active" : ""}`
             }
           >
             <MessageCircle size={22} />
-            <span>聊天</span>
+            <span>{tr('screen340')}</span>
             {conversations.some((c) => c.unreadCount > 0) && (
               <i className="rail-dot" />
             )}
           </NavLink>
           <NavLink
             to="/friends"
-            title="好友"
+            title={tr('screen341')}
             className={({ isActive }) =>
               `rail-link ${isActive ? "active" : ""}`
             }
           >
             <Users size={22} />
-            <span>好友</span>
+            <span>{tr('screen341')}</span>
             {requests.incoming.length > 0 && (
               <i className="rail-count">{requests.incoming.length}</i>
             )}
@@ -179,38 +179,38 @@ export function Layout() {
           {user?.role === "ADMIN" && (
             <NavLink
               to="/admin"
-              title="管理后台"
+              title={tr('screen264')}
               className={({ isActive }) =>
                 `rail-link ${isActive ? "active" : ""}`
               }
             >
               <Shield size={22} />
-              <span>管理</span>
+              <span>{tr('screen342')}</span>
             </NavLink>
           )}
           <div className="rail-divider" />
-          {communities.map(s => <NavLink key={s.id} to={`/servers/${s.id}`} title={s.name} aria-label={`社区：${s.name}`} className={`rail-server ${serverId === s.id ? 'active' : ''}`}><span>{s.name.slice(0, 2)}</span>{conversations.some(c => c.channel?.serverId === s.id && c.unreadCount > 0) && <i className="rail-dot" />}</NavLink>)}
-          <button className="rail-server rail-create" title="创建社区" aria-label="创建社区" onClick={() => setCommunityDialog('create')}><Plus size={23} /></button>
-          <button className="rail-server rail-join" title="加入社区" aria-label="加入社区" onClick={() => setCommunityDialog('join')}><Users size={22} /></button>
+          {communities.map(s => <NavLink key={s.id} to={`/servers/${s.id}`} title={s.name} aria-label={tr('screen343', {v0: s.name})} className={`rail-server ${serverId === s.id ? 'active' : ''}`}><span>{s.name.slice(0, 2)}</span>{conversations.some(c => c.channel?.serverId === s.id && c.unreadCount > 0) && <i className="rail-dot" />}</NavLink>)}
+          <button className="rail-server rail-create" title={tr('screen344')} aria-label={tr('screen344')} onClick={() => setCommunityDialog('create')}><Plus size={23} /></button>
+          <button className="rail-server rail-join" title={tr('screen345')} aria-label={tr('screen345')} onClick={() => setCommunityDialog('join')}><Users size={22} /></button>
         </nav>
         <div className="rail-bottom">
           <button
             className="rail-link"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            title="切换主题"
-            aria-label="切换亮暗主题"
+            title={tr('screen346')}
+            aria-label={tr('screen347')}
           >
             {theme === "dark" ? <Sun size={21} /> : <Moon size={21} />}
-            <span>外观</span>
+            <span>{tr('screen348')}</span>
           </button>
-          <NavLink to="/settings" className="rail-link" title="设置">
+          <NavLink to="/settings" className="rail-link" title={tr('screen349')}>
             <Settings size={22} />
-            <span>设置</span>
+            <span>{tr('screen349')}</span>
           </NavLink>
           <div className="rail-user">
             <button
               onClick={() => setMenu(!menu)}
-              aria-label="账号菜单"
+              aria-label={tr('screen350')}
               aria-expanded={menu}
             >
               <Avatar user={user} size="sm" showStatus />
@@ -219,11 +219,10 @@ export function Layout() {
               <div className="account-menu">
                 <strong>{user?.displayName}</strong>
                 <Link to="/profile" onClick={() => setMenu(false)}>
-                  个人资料 <ArrowUpRight size={15} />
+                  {tr('screen351')}<ArrowUpRight size={15} />
                 </Link>
                 <button onClick={() => void task(logout)}>
-                  <LogOut size={15} /> 退出登录
-                </button>
+                  <LogOut size={15} /> {tr('screen352')}</button>
               </div>
             )}
           </div>
@@ -239,8 +238,7 @@ export function Layout() {
           className={`connection-banner ${connected ? "connection-hidden" : ""}`}
           role="status"
         >
-          <WifiOff size={14} /> 正在重连，恢复后将自动同步未读消息
-        </div>
+          <WifiOff size={14} /> {tr('screen353')}</div>
         <Outlet />
       </div>
       {communityDialog && <CommunityDialog join={communityDialog === 'join'} onClose={() => setCommunityDialog(null)} />}
@@ -255,6 +253,7 @@ function ConversationList({
   active?: string;
   onCreate: () => void;
 }) {
+  useLanguage();
   const { user, conversations } = useApp(),
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState("all");
@@ -271,14 +270,14 @@ function ConversationList({
       <header className="sidebar-heading">
         <div>
           <h1>
-            消息<span className="dot-accent">.</span>
+            {tr('screen354')}<span className="dot-accent">.</span>
           </h1>
-          <span className="sidebar-subtitle">每一段对话，都值得停留</span>
+          <span className="sidebar-subtitle">{tr('screen355')}</span>
         </div>
         <button
           className="icon-btn new-chat"
-          title="创建群聊"
-          aria-label="创建群聊"
+          title={tr('screen333')}
+          aria-label={tr('screen333')}
           onClick={onCreate}
         >
           <Plus size={20} />
@@ -287,13 +286,13 @@ function ConversationList({
       <div className="sidebar-search">
         <Search size={17} />
         <input
-          placeholder="搜索对话"
+          placeholder={tr('screen356')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          aria-label="搜索对话"
+          aria-label={tr('screen356')}
         />
         {search && (
-          <button aria-label="清空搜索" onClick={() => setSearch("")}>
+          <button aria-label={tr('screen357')} onClick={() => setSearch("")}>
             <X size={14} />
           </button>
         )}
@@ -304,13 +303,13 @@ function ConversationList({
           className={filter === "all" ? "active" : ""}
           onClick={() => setFilter("all")}
         >
-          全部消息 <span>{conversations.filter(c => c.type !== "CHANNEL").length}</span>
+          {tr('screen358')}<span>{conversations.filter(c => c.type !== "CHANNEL").length}</span>
         </button>
         <button
           className={filter === "unread" ? "active" : ""}
           onClick={() => setFilter("unread")}
         >
-          未读 {conversations.some((c) => c.unreadCount > 0) && <i />}
+          {tr('unread')}{conversations.some((c) => c.unreadCount > 0) && <i />}
         </button>
         <ChevronDown size={14} />
       </div>
@@ -336,11 +335,11 @@ function ConversationList({
               <div>
                 <p>
                   {c.lastMessage?.retractedAt
-                    ? "一条消息已撤回"
+                    ? tr('screen359')
                     : c.lastMessage?.content ||
                       ((c.lastMessage?.attachments?.length || 0) > 0
-                        ? "[文件]"
-                        : "开始新的对话")}
+                        ? tr('screen360')
+                        : tr('screen361'))}
                 </p>
                 {c.unreadCount > 0 && (
                   <span className="unread-count">
@@ -356,22 +355,21 @@ function ConversationList({
             <MessageCircle size={25} />
             <p>
               {search
-                ? "没有找到相关对话"
+                ? tr('screen362')
                 : filter === "unread"
-                  ? "所有消息都已读"
-                  : "还没有对话"}
+                  ? tr('screen363')
+                  : tr('screen364')}
             </p>
             {!search && filter === "all" && (
               <Link to="/friends">
-                寻找好友 <ArrowUpRight size={13} />
+                {tr('screen365')}<ArrowUpRight size={13} />
               </Link>
             )}
           </div>
         )}
       </div>
       <footer className="sidebar-footer">
-        <span className="tiny-online" /> 给重要的人，留一个位置。
-        <span>泊岸</span>
+        <span className="tiny-online" /> {tr('screen366')}<span>{tr('screen313')}</span>
       </footer>
     </aside>
   );

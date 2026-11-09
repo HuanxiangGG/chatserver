@@ -286,7 +286,7 @@ git push origin main
 
 ## 账户恢复、安全边界与限制
 
-`POST /api/auth/forgot-password` 返回统一响应，避免探测邮箱；尚未集成 SMTP，因此不会发送邮件。可信服务器管理员在其他渠道核验身份后执行：
+`POST /api/auth/forgot-password` 返回统一响应，避免探测邮箱；支持通过环境变量配置真实 SMTP；未配置 SMTP_HOST 时明确提示联系管理员，不会声称已发送邮件。可信服务器管理员在其他渠道核验身份后执行：
 
 ```bash
 docker compose exec -it backend npm run recovery:create
@@ -314,7 +314,7 @@ docker compose exec -it backend npm run recovery:create
 - 图片可在页面内放大、关闭及下载；PDF 保持安全下载。附件地址始终由 ID 构造并经过已有下载权限/MIME/文件名检查，不开放上传目录。
 - 新增 `20261109110000_user_preferences` 和 `20261109120000_message_search`，只新增表、扩展和索引，不清空旧记录。搜索迁移使用 PostgreSQL `pg_trgm`（可信扩展）；数据库迁移账号需要相应 CREATE 权限。大表创建 GIN 索引可能影响写入，应在维护窗口完成，先在隔离备份库演练。不能通过删除迁移或重置数据库绕过。
 
-声音和搜索面板具备独立中英文词典；完整旧页面翻译尚未完成。`npm run i18n:check` 已加入 CI，当前会因旧页面的硬编码文本失败，分支不具备合并发布条件。现有检查仍需补齐完整翻译使用关系分析；不应将词典键配对检查等同于完整国际化验收。
+所有现有页面已接入共享简体中文 / English 词典，包括登录注册、社区、好友、设置和管理后台。未登录时可切换语言，设置保留在浏览器。`npm run i18n:check` 检查双语 key、插值、重复 key、无效与未使用 key，以及组件可见硬编码文字；CI 检查失败会阻止合并。API 和 Socket 的已知错误通过统一词典展示，用户原文不翻译。
 
 ### 每日私密备份和隔离恢复
 
@@ -349,3 +349,54 @@ python3 scripts/restore-uploads.py /var/backups/harbor/uploads-TIMESTAMP.tar.gz 
 ```
 
 脚本和设置的自动化测试不代表真实生产恢复已经演练。恢复后核对记录和文件，再决定应用切换；恢复脚本不自动覆盖生产库或上传目录。
+
+
+## 开发分支：转发、群管理、举报与恢复邮件
+
+本分支新增三项**增量迁移**，保留原表记录和上传卷：
+
+- `20261109130000_forward_batches`：消息转发来源元数据及幂等批次。
+- `20261109140000_group_moderation`：群公告、公告版本已读和群成员禁言。
+- `20261109150000_reports_temporary_bans`：举报记录、账号封禁到期和原因。
+
+新增 HTTP 接口（统一 `/api` 前缀；写操作保留 Cookie、Origin 和 CSRF 验证）：
+
+| 接口 | 用途 |
+| --- | --- |
+| `POST /conversations/:id/forward` | 1–20 条消息按顺序转发，quote/copy 两种模式；clientId 幂等；来源可读且目标可写；附件复制为目标受权对象 |
+| `GET/POST /conversations/:id/announcements` | 查看或管理公告；仅群主和管理员发布 |
+| `PATCH/DELETE /conversations/:id/announcements/:announcementId` | 带版本编辑/置顶或软删除，危险操作写审计日志 |
+| `POST /conversations/:id/announcements/:announcementId/read` | 标记当前版本已读；更新版本后重新未读 |
+| `GET /conversations/:id/mutes` | 管理员查看全部禁言，成员只查看自己 |
+| `PUT /conversations/:id/mutes/:userId` | 10m、1h、1d、forever、off，服务端权限和到期判断 |
+| `POST /reports`、`GET /reports/mine` | 举报用户、消息、图片、文件或群聊，查看自己的处理状态 |
+| `GET /admin/reports`、`PATCH /admin/reports/:id` | 按状态/原因筛选、分页、处理与驳回，并记录审计 |
+| `POST /admin/users/:id/ban` | 新增可选 until，空值永久；封禁撤销全部会话；到期只允许重新登录，不恢复旧会话 |
+
+公告和禁言复用 `conversation:updated` 刷新，转发复用 `message:new`。系统通知与声音只监听 Socket 新消息，不从历史请求播放；连接使用 `session:ready.serverTime` 区分重连历史。浏览器系统通知独立开关、静音投递、分类和免打扰；需要用户手动允许。没有 service worker，页面关闭后不投递系统通知或声音。
+
+发送模块将可编辑新草稿与已提交消息分开，最多依次排队20条；请求失败暂停队列，保留原文/附件和 clientId，重试先确认原消息，避免重复。队列只保存在当前页面内存；关闭或刷新页面之前应完成发送确认。用户查看历史记录时不会强制改变消息滚动位置。
+
+### SMTP 配置
+
+在原 `.env` 中配置 `SMTP_HOST`、`SMTP_PORT`（默认587）、`SMTP_SECURE`（465端口使用true）、`SMTP_USER`、`SMTP_PASSWORD`、`SMTP_FROM`。后端使用 TLS/STARTTLS 并验证证书，不记录协议、邮箱、令牌或重设链接。密码通过原 Compose 环境变量传入，切勿提交真实 `.env`。配置不完整时后端启动失败，避免假成功。
+
+找回密码对存在与不存在的邮箱返回统一受理提示，邮件使用所选中英文文案。令牌为32字节随机值、仅保存SHA256哈希、15分钟有效且一次性；重设撤销旧会话。链接令牌放在URL fragment中，页面读取后清理地址。SMTP失败会立即失效该令牌，并只输出 `PASSWORD_RECOVERY_DELIVERY_FAILED` 运维错误；普通页面不揭示具体邮箱是否存在，未收到邮件时可联系管理员使用可信CLI核验恢复。
+
+### 安全更新本分支
+
+先在隔离环境验证备份/恢复及所有 CI。确认当前目录和 Compose 项目名未改变，沿用原 `COMPOSE_FILE`，不要切换卷名或 Caddy 架构。正式合入 main 后在原服务器目录执行：
+
+```bash
+./scripts/backup.sh
+./scripts/data-inventory.sh > /私密备份目录/before.txt
+git pull --ff-only
+docker compose up -d --build
+docker compose exec -T backend npx prisma migrate deploy
+docker compose ps
+./scripts/data-inventory.sh > /私密备份目录/after.txt
+```
+
+前后端均需重新构建；启动脚本已在API启动前执行增量迁移。核对前后原用户、消息和群组ID、计数，以及原上传文件SHA256和卷挂载。新记录可以增加，既有ID和文件不应消失。备份与清单限制为管理员可读，不放网站目录或 Git。应用回滚保留增量表，不反向执行破坏性 schema 回滚。
+
+`./scripts/verify-backup-ci.sh` 只允许 GitHub 的临时 Runner 上运行，会对真实 Compose 实例备份、恢复到新数据库和新目录、比较数据行数及文件内容，并验证再次恢复拒绝覆盖。它不用于生产。

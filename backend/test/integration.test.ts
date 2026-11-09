@@ -32,8 +32,10 @@ function api(p?: Person) {
     delete: (path: string, body: unknown = {}) => request(app).delete(`/api${path}`).set('Origin', origin).set('Cookie', p?.cookie ?? '').set('X-CSRF-Token', p?.csrfToken ?? '').send(body),
   };
 }
-async function register(name: string): Promise<Person> {
-  const r = await api().post('/auth/register', { username: prefix + name, email: `${prefix}${name}@example.test`, password, displayName: name });
+async function register(name: string, ip?: string): Promise<Person> {
+  const pending = api().post('/auth/register', { username: prefix + name, email: `${prefix}${name}@example.test`, password, displayName: name });
+  if (ip) pending.set('X-Forwarded-For', `${ip}, 127.0.0.1`);
+  const r = await pending;
   expect(r.status, JSON.stringify(r.body)).toBe(201);
   return { ...r.body, cookie: r.headers['set-cookie'][0].split(';')[0] };
 }
@@ -299,4 +301,81 @@ it('searches only permitted visible messages with literal keywords, filters and 
   expect((await api(a).delete(`/messages/${ids[0]}`)).status).toBe(200);
   expect((await api(a).get(`/conversations/${room}/messages/${ids[0]}/context`)).status).toBe(404);
   expect((await api(a).get(`/conversations/${room}/search?q=${encodeURIComponent(needle)}`)).body.messages).toHaveLength(2);
+});
+
+it('forwards real text and files with new target permissions, attribution, and idempotent batches', async () => {
+ const a = await register('forwarda', '198.51.100.89'), b = await register('forwardb', '198.51.100.89'); await friend(a, b);
+ const direct = await api(a).post('/conversations/direct', { userId: b.user.id }); expect(direct.status).toBe(201);
+ const source = direct.body.id;
+ const created = await api(a).post('/conversations/group', { name: 'Forward destination', userIds: [b.user.id] }); expect(created.status).toBe(201);
+ const target = created.body.id;
+ const text = await api(a).post(`/conversations/${source}/messages`, { content: 'Forward this text', clientId: randomUUID() }); expect(text.status).toBe(201);
+ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXV0AAAAASUVORK5CYII=', 'base64');
+ const uploaded = await request(app).post('/api/uploads').set('Origin', origin).set('Cookie', a.cookie).set('X-CSRF-Token', a.csrfToken).attach('file', png, { filename: 'forward.png', contentType: 'image/png' }); expect(uploaded.status).toBe(201);
+ const image = await api(a).post(`/conversations/${source}/messages`, { attachmentIds: [uploaded.body.id], clientId: randomUUID() }); expect(image.status).toBe(201);
+ const body = { sourceIds: [text.body.id, image.body.id], clientId: randomUUID(), mode: 'quote' };
+ const forwarded = await api(a).post(`/conversations/${target}/forward`, body); expect(forwarded.status, JSON.stringify(forwarded.body)).toBe(201);
+ expect(forwarded.body.messages).toHaveLength(2); expect(forwarded.body.messages[0].forwardedFrom.senderName).toBe('forwarda');
+ const newFile = forwarded.body.messages[1].attachments[0]; expect(newFile.id).not.toBe(uploaded.body.id);
+ const copy = await api(b).get(`/uploads/${newFile.id}`); expect(copy.status).toBe(200); expect(Buffer.compare(copy.body, png)).toBe(0);
+ const retry = await api(a).post(`/conversations/${target}/forward`, body); expect(retry.status).toBe(200); expect(retry.body.messages.map((m: any) => m.id)).toEqual(forwarded.body.messages.map((m: any) => m.id));
+ const conflict = await api(a).post(`/conversations/${target}/forward`, { ...body, mode: 'copy' }); expect(conflict.status).toBe(409);
+ const plain = await api(a).post(`/conversations/${target}/forward`, { sourceIds: [text.body.id], clientId: randomUUID(), mode: 'copy' }); expect(plain.status).toBe(201); expect(plain.body.messages[0].forwardedFrom).toBeNull();
+ expect((await api(a).post(`/conversations/${group}/forward`, { ...body, clientId: randomUUID() })).status).toBe(403);
+ expect((await api(a).post(`/conversations/${target}/forward`, { sourceIds: [message], clientId: randomUUID(), mode: 'copy' })).status).toBe(403);
+ expect((await api().post(`/conversations/${target}/forward`, body)).status).toBe(401);
+ const csrf = await request(app).post(`/api/conversations/${target}/forward`).set('Origin', origin).set('Cookie', a.cookie).send(body); expect(csrf.status).toBe(403);
+});
+
+it('enforces announcement versions, unread state, role hierarchy and expiring group mutes', async () => {
+ const a=await register('moderatora','198.51.100.90'), b=await register('moderatorb','198.51.100.90'); await friend(a,b);
+ const room=(await api(a).post('/conversations/group',{name:'Moderation test',userIds:[b.user.id]})).body.id;
+ const put=(person:Person,path:string,body:unknown)=>request(app).put(`/api${path}`).set('Origin',origin).set('Cookie',person.cookie).set('X-CSRF-Token',person.csrfToken).send(body);
+ const basePath=`/conversations/${room}`;
+ expect((await api(b).post(`${basePath}/announcements`,{title:'No',content:'Forbidden'})).status).toBe(403);
+ const created=await api(a).post(`${basePath}/announcements`,{title:'Announcement',content:'Real announcement',pinned:true}); expect(created.status).toBe(201);
+ const path=`${basePath}/announcements/${created.body.id}`;
+ expect((await api(b).get(`${basePath}/announcements`)).body[0].unread).toBe(true);
+ expect((await api(b).post(`${path}/read`)).status).toBe(200);
+ expect((await api(b).get(`${basePath}/announcements`)).body[0].unread).toBe(false);
+ const edit={title:'Updated',content:'New content',pinned:false,version:1};
+ expect((await api(a).patch(path,edit)).status).toBe(200);
+ expect((await api(a).patch(path,edit)).status).toBe(409);
+ expect((await api(b).get(`${basePath}/announcements`)).body[0].unread).toBe(true);
+ expect((await put(b,`${basePath}/mutes/${a.user.id}`,{duration:'10m',reason:'Invalid hierarchy'})).status).toBe(403);
+ expect((await put(a,`${basePath}/mutes/${b.user.id}`,{duration:'10m',reason:'Integration moderation'})).status).toBe(200);
+ expect((await api(b).get(basePath)).body.canWrite).toBe(false);
+ expect((await api(b).post(`${basePath}/messages`,{content:'Cannot send',clientId:randomUUID()})).status).toBe(403);
+ expect((await api(b).get(`${basePath}/messages`)).status).toBe(200);
+ const upload=await request(app).post(`/api/uploads?conversationId=${room}`).set('Origin',origin).set('Cookie',b.cookie).set('X-CSRF-Token',b.csrfToken).attach('file',Buffer.from('blocked'),{filename:'blocked.txt',contentType:'text/plain'}); expect(upload.status).toBe(403);
+ await prisma.groupMute.update({where:{conversationId_userId:{conversationId:room,userId:b.user.id}},data:{until:new Date(Date.now()-1000)}});
+ expect((await api(b).get(basePath)).body.canWrite).toBe(true);
+ expect((await api(b).post(`${basePath}/messages`,{content:'Can send after expiry',clientId:randomUUID()})).status).toBe(201);
+ expect((await api(a).delete(path)).status).toBe(200);
+ expect((await api(b).get(`${basePath}/announcements`)).body).toEqual([]);
+ expect(await prisma.adminAction.count({where:{actorId:a.user.id,action:{startsWith:'GROUP_'}}})).toBeGreaterThanOrEqual(4);
+});
+
+it('authorizes reports, audits decisions, revokes banned sessions and expires temporary bans', async () => {
+ const a=await register('reporta','198.51.100.91'), b=await register('reportb','198.51.100.91'); await friend(a,b);
+ const room=(await api(a).post('/conversations/direct',{userId:b.user.id})).body.id;
+ const msg=(await api(a).post(`/conversations/${room}/messages`,{content:'Reported test message',clientId:randomUUID()})).body;
+ expect((await api(b).get('/admin/reports')).status).toBe(403);
+ expect((await api(b).post('/reports',{targetType:'MESSAGE',targetId:message,reason:'SPAM',details:'Not a member here'})).status).toBe(403);
+ const report=await api(b).post('/reports',{targetType:'MESSAGE',targetId:msg.id,reason:'SPAM',details:'Review this synthetic report'}); expect(report.status).toBe(201);
+ const page=await api(admin).get('/admin/reports?status=OPEN&limit=1'); expect(page.status).toBe(200); expect(page.body.reports).toHaveLength(1);
+ expect((await api(admin).patch(`/admin/reports/${report.body.id}`,{status:'RESOLVED',resolution:'Reviewed test case'})).status).toBe(200);
+ expect((await api(b).get('/reports/mine')).body[0].status).toBe('RESOLVED');
+ expect(await prisma.adminAction.count({where:{targetId:report.body.id,action:'REPORT_HANDLE'}})).toBe(1);
+ expect((await api(b).post(`/admin/users/${a.user.id}/ban`,{banned:true,reason:'Unauthorized'})).status).toBe(403);
+ const ban=await api(admin).post(`/admin/users/${a.user.id}/ban`,{banned:true,reason:'Temporary test ban',until:new Date(Date.now()+60000).toISOString()}); expect(ban.status).toBe(200);
+ expect((await api(a).get('/auth/me')).status).toBe(401);
+ expect((await api().post('/auth/login',{username:a.user.username,password})).status).toBe(401);
+ await prisma.user.update({where:{id:a.user.id},data:{bannedUntil:new Date(Date.now()-1000)}});
+ expect((await api().post('/auth/login',{username:a.user.username,password})).status).toBe(200);
+ expect((await api(a).get('/auth/me')).status).toBe(401);
+ expect(await prisma.adminAction.count({where:{targetId:a.user.id,action:'USER_BAN_EXPIRED'}})).toBe(1);
+ expect((await api(admin).post(`/admin/users/${b.user.id}/ban`,{banned:true,reason:'Permanent test ban'})).status).toBe(200);
+ expect((await api(admin).post(`/admin/users/${b.user.id}/ban`,{banned:false,reason:'Unban test account'})).status).toBe(200);
+ expect((await api().post('/auth/login',{username:b.user.username,password})).status).toBe(200);
 });

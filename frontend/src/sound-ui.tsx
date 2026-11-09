@@ -4,20 +4,15 @@ import { api, json } from './api';
 import { useApp } from './state';
 import type { Message, Conversation } from './types';
 import { SoundPlayer, soundSessionTimes, defaultSound, normalizeSound, type SoundSettings } from './sound';
-import dictionaries from './locales/sound.json';
-type Key = keyof typeof dictionaries.en;
+import { getLanguage, setLanguage, useTranslation, type TranslationKey } from './i18n';
+type Key = TranslationKey;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach(fn => fn());
 const read = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
-const write = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* Local state still works. */ } };
-let locale: 'zh-CN' | 'en' = read('harbor.language') === 'en' ? 'en' : 'zh-CN';
-export const soundLocale = () => locale;
+const write = (key: string, value: string) => { try { localStorage.setItem(key, value); return true; } catch { return false; } };
+export const soundLocale = getLanguage;
 let settings = (() => { try { return normalizeSound(JSON.parse(read('harbor.sound.guest') || '{}')); } catch { return { ...defaultSound }; } })();
-export function useSoundText() {
- const [, update] = useState(0);
- useEffect(() => { const fn = () => update(v => v + 1); listeners.add(fn); return () => { listeners.delete(fn); }; }, []);
- return (key: Key, vars: Record<string, string | number> = {}) => dictionaries[locale][key].replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ''));
-}
+export const useSoundText = useTranslation;
 let player: SoundPlayer | null = null;
 let blocked = false;
 let syncing = false;
@@ -58,7 +53,7 @@ export function SoundRuntime() {
    // Resolve only current-user accessible conversations; never infer type from untrusted text.
    if (!conversation) return;
    const active = document.visibilityState === 'visible' && document.hasFocus() && context.current.path.endsWith(`/${m.conversationId}`);
-   void player.receive(m, settings, { userId: current.id, username: current.username, type: conversation.type, active }).catch(() => {});
+   void player.receive(m, settings, { userId: current.id, username: current.username, type: conversation.type, active }).catch(() => { blocked = true; notify(); });
   };
   socket.on('message:new', receive);
   return () => { socket.off('connect', connected); socket.off('session:ready', ready); socket.off('message:new', receive); };
@@ -71,9 +66,9 @@ export function SoundSettingsPanel() {
  useEffect(() => {
   const fn = () => refresh(v => v + 1); listeners.add(fn); return () => { listeners.delete(fn); };
  }, []);
- const change = (patch: Partial<SoundSettings>) => { settings = normalizeSound({ ...settings, ...patch }); write(user ? `harbor.sound.${user.id}` : 'harbor.sound.guest', JSON.stringify(settings)); setStatus(null); notify(); };
+ const change = (patch: Partial<SoundSettings>) => { settings = normalizeSound({ ...settings, ...patch }); const saved = write(user ? `harbor.sound.${user.id}` : 'harbor.sound.guest', JSON.stringify(settings)); setStatus(saved ? null : 'failed'); notify(); };
  async function enable() { const ok = await player?.unlock(); blocked = !ok; notify(); if (ok) change({ enabled: true }); }
- return <section className="settings-section sound-settings"><h2>{t('title')}</h2><label>{t('language')}<select value={locale} onChange={e => { locale = e.target.value === 'en' ? 'en' : 'zh-CN'; write('harbor.language', locale); notify(); }}><option value="zh-CN">{t("chinese")}</option><option value="en">{t("english")}</option></select></label>
+ return <section className="settings-section sound-settings"><h2>{t('title')}</h2><label>{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t("chinese")}</option><option value="en">{t("english")}</option></select></label>
  {!player?.ready && <button type="button" className="btn btn-primary" disabled={syncing} onClick={() => void enable()}>{t('enable')}</button>}
  {syncFailed && <p role="status">{t('failed')}</p>}
  {blocked && <p role="status">{t('blocked')}</p>}
@@ -81,7 +76,7 @@ export function SoundSettingsPanel() {
  <label>{t('volume', { volume: Math.round(settings.volume * 100) })}<input type="range" min="0" max="100" value={Math.round(settings.volume * 100)} disabled={busy || syncing} onChange={e => change({ volume: Number(e.target.value) / 100 })} /></label>
  <label>{t('tone')}<select value={settings.tone} disabled={busy || syncing} onChange={e => change({ tone: e.target.value === 'bell' ? 'bell' : 'soft' })}><option value="soft">{t('soft')}</option><option value="bell">{t('bell')}</option></select></label>
  <div className="sound-times">{(['start','end'] as const).map(key => <label key={key}>{t(key)}<input type="time" value={settings[key]} disabled={busy || syncing} onChange={e => change({ [key]: e.target.value })} /></label>)}</div><p>{t('hint')}</p>
- <div className="sound-actions"><button type="button" className="btn btn-secondary" disabled={busy || syncing} onClick={async () => { const ok = await player?.test(settings); setStatus(ok ? 'played' : 'blocked'); notify(); }}>{t('test')}</button><button type="button" className="btn btn-primary" disabled={busy || syncing} onClick={async () => { const id = user?.id; setBusy(true); try { if (id) await api('/users/me/sound', json('PUT', settings)); if (owner.current === id) setStatus('saved'); } catch { if (owner.current === id) setStatus('failed'); } finally { setBusy(false); } }}>{t('save')}</button></div>
+ <div className="sound-actions"><button type="button" className="btn btn-secondary" disabled={busy || syncing} onClick={async () => { const ok = await player?.test(settings); setStatus(ok ? 'played' : 'blocked'); notify(); }}>{t('test')}</button><button type="button" className="btn btn-primary" disabled={busy || syncing} onClick={async () => { const id = user?.id; setBusy(true); try { if (id) await api('/users/me/sound', json('PUT', settings)); else if (!write('harbor.sound.guest', JSON.stringify(settings))) throw new Error('Local preference storage unavailable'); if (owner.current === id) setStatus('saved'); } catch { if (owner.current === id) setStatus('failed'); } finally { setBusy(false); } }}>{t('save')}</button></div>
  <p aria-live="polite">{busy || syncing ? t('loading') : status ? t(status) : ''}</p></section>;
 }
 export function SoundEntry() { const t = useSoundText(), [open, setOpen] = useState(false); return <div className="sound-entry"><button type="button" className="btn btn-secondary" onClick={() => { setOpen(!open); if (!player?.ready && !syncing) void player?.unlock().then(ok => { blocked = !ok; notify(); }); }} aria-expanded={open}>{t(player?.ready ? 'settings' : 'enable')}</button>{open && <SoundSettingsPanel />}</div>; }

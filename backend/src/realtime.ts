@@ -1,3 +1,4 @@
+import { assertNotGroupMuted } from './group-policy.js';
 import { channelPermission } from './channel-policy.js';
 import { isTrustedOrigin } from './context.js';
 import type { Server as HttpServer } from 'node:http';
@@ -129,6 +130,7 @@ export async function initRealtime(server: HttpServer) {
       try {
         await fresh(socket);
         const input = validate(z.object({ conversationId: z.string().min(1).max(100), typing: z.boolean() }), raw);
+        await assertNotGroupMuted(input.conversationId, data.userId);
         const users = await eventMembers(input.conversationId, data.userId);
         emitUsers(users.filter(id => id !== data.userId), 'typing', { ...input, userId: data.userId }); respond(ack, { ok: true });
       } catch (error) { reject(socket, error, ack); }

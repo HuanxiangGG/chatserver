@@ -1,3 +1,5 @@
+import { requestRecovery } from './recovery-mail.js';
+import { expireBan } from './ban-policy.js';
 import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
@@ -25,7 +27,8 @@ router.post('/auth/login', asyncRoute(async (req, res) => {
   await consumeLimit(`login:ip:${req.ip}`, 30, 900);
   const input = validate(z.object({ username: z.string().trim().toLowerCase().min(3).max(254), password: z.string().min(1).max(256) }), req.body);
   await consumeLimit(`login:account:${hashToken(input.username)}`, 10, 900);
-  const user = await prisma.user.findFirst({ where: { OR: [{ username: input.username }, { email: input.username }] } });
+  let user = await prisma.user.findFirst({ where: { OR: [{ username: input.username }, { email: input.username }] } });
+  if (user?.banned && user.bannedUntil && user.bannedUntil <= new Date()) { await expireBan(user.id); user = await prisma.user.findUnique({ where: { id: user.id } }); }
   const correct = await compare(input.password, user?.passwordHash ?? await dummyHash);
   if (!user || !correct || user.banned) throw new HttpError(401, '用户名或密码错误，或账户不可用');
   const { token, session } = await prisma.$transaction(async tx => {
@@ -84,11 +87,9 @@ router.post('/auth/password', requireAuth, asyncRoute(async (req, res) => {
 }));
 router.post('/auth/forgot-password', asyncRoute(async (req, res) => {
   await consumeLimit(`recovery:ip:${req.ip}`, 5, 3600);
-  validate(z.object({ email: emailSchema }), req.body);
-  // A mail adapter is intentionally not configured. Recovery requires the trusted
-  // recovery CLI after the operator verifies the user's identity out of band.
-  // Never reveal account existence or return a reset token from this public route.
-  res.status(202).json({ ok: true, message: '如需恢复账户，请联系管理员完成身份验证。' });
+  const input = validate(z.object({ email: emailSchema, language: z.enum(['zh-CN', 'en']).default('zh-CN') }), req.body);
+  const result = await requestRecovery(input.email, input.language);
+  res.status(202).json({ ok: true, recovery: result, message: result === 'unconfigured' ? '此站点未启用邮件找回，请联系管理员核验身份。' : '请求已受理。如果邮箱符合条件，将收到短时有效的链接；若未收到，请联系管理员。' });
 }));
 router.post('/auth/reset-password', asyncRoute(async (req, res) => {
   await consumeLimit(`reset:ip:${req.ip}`, 10, 3600);

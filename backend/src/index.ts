@@ -1,3 +1,4 @@
+import { mailConfiguration } from './recovery-mail.js';
 import { createServer } from 'node:http';
 import app from './app.js';
 import { config, prisma, redis } from './context.js';
@@ -7,6 +8,7 @@ const server = createServer(app);
 server.requestTimeout = 30000;
 server.headersTimeout = 15000;
 async function start() {
+  mailConfiguration();
   await prisma.$connect();
   await redis.ping();
   await initRealtime(server);

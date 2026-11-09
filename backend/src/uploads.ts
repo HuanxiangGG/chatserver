@@ -1,3 +1,4 @@
+import { writable } from './chat.js';
 import { channelPermission } from './channel-policy.js';
 import { Router } from 'express';
 import multer from 'multer';
@@ -11,7 +12,10 @@ import { z } from 'zod';
 const router = Router(); router.use(requireAuth);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0, parts: 1 }, preservePath: true });
 const allowed: Record<string, string[]> = { 'image/png': ['.png'], 'image/jpeg': ['.jpg', '.jpeg'], 'image/gif': ['.gif'], 'image/webp': ['.webp'], 'application/pdf': ['.pdf'] };
-router.post('/uploads', asyncRoute(async (req, _res, next) => { await consumeLimit(`upload:${req.user.id}`, 20, 60); next(); }), upload.single('file'), asyncRoute(async (req, res) => {
+router.post('/uploads', asyncRoute(async (req, _res, next) => { await consumeLimit(`upload:${req.user.id}`, 20, 60); const conversationId = validate(z.string().min(1).max(100).optional(), req.query.conversationId);
+ if (conversationId) await writable(conversationId, req.user.id);
+ else if (await prisma.groupMute.findFirst({ where: { userId: req.user.id, OR: [{ permanent: true }, { until: { gt: new Date() } }] } })) throw new HttpError(403, '禁言期间上传需要指定可写会话', 'GROUP_MUTED');
+ next(); }), upload.single('file'), asyncRoute(async (req, res) => {
   const file = req.file;
   if (!file || !file.buffer.length) throw new HttpError(400, '请选择文件');
   // Multipart's legacy Latin-1 parameter decoding can otherwise corrupt UTF-8 filenames.

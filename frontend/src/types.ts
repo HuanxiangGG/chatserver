@@ -27,6 +27,7 @@ export interface Attachment {
   url?: string;
 }
 export interface Message {
+  forwardedFrom?: { senderName: string; sentAt: string } | null;
   id: string;
   conversationId: string;
   senderId: string;
@@ -42,6 +43,7 @@ export interface Message {
     content: string;
     sender?: User;
     retractedAt?: string | null;
+    attachments?: Attachment[];
   } | null;
   clientId?: string;
   reads?: {
@@ -55,6 +57,8 @@ export interface Conversation {
   type: "DIRECT" | "GROUP" | "CHANNEL";
   channel?: { id: string; serverId: string; readOnly: boolean; isPrivate: boolean } | null;
   canWrite?: boolean;
+  unreadAnnouncements?: number;
+  mute?: { permanent: boolean; until: string | null; reason: string } | null;
   name: string | null;
   description: string | null;
   avatarUrl: string | null;

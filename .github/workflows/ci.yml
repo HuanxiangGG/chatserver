@@ -52,6 +52,7 @@ jobs:
       - run: node scripts/smoke.mjs
         env:
           SMOKE_ORIGIN: https://chat.6hx9.com
+      - run: ./scripts/verify-backup-ci.sh
       - if: failure()
         run: |
           if [ -f .env.example ]; then docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.caddy.yml logs --no-color --tail=100; fi

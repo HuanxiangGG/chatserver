@@ -6,7 +6,10 @@ import { soundLocale, useSoundText } from './sound-ui';
 export function MessageSearch({ conversation, locate }: { conversation: Conversation; locate: (id: string) => Promise<void> }) {
  const t = useSoundText(), [open, setOpen] = useState(false), [rows, setRows] = useState<Message[]>([]), [busy, setBusy] = useState(false), [searched, setSearched] = useState(false), [error, setError] = useState(''), [cursor, setCursor] = useState<string | null>(null);
  const parameters = useRef(new URLSearchParams()), request = useRef<AbortController | null>(null);
- useEffect(() => () => request.current?.abort(), []);
+ useEffect(() => {
+  request.current?.abort(); setBusy(false); setOpen(false); setRows([]); setBusy(false); setSearched(false); setError(''); setCursor(null); parameters.current = new URLSearchParams();
+  return () => request.current?.abort();
+ }, [conversation.id]);
  async function run(query: URLSearchParams, append = false) {
   request.current?.abort(); const controller = new AbortController(); request.current = controller; setBusy(true); setError('');
   try {
@@ -16,7 +19,7 @@ export function MessageSearch({ conversation, locate }: { conversation: Conversa
   } catch (e) { if (!controller.signal.aborted) setError(t(e instanceof ApiError && e.status === 403 ? 'noAccess' : 'searchError')); }
   finally { if (!controller.signal.aborted) setBusy(false); }
  }
- return <><button type="button" className="btn btn-secondary" onClick={() => setOpen(true)}>{t('searchTitle')}</button>{open && <Dialog title={t('searchTitle')} onClose={() => { request.current?.abort(); setOpen(false); }}><form className="form-stack" onSubmit={e => {
+ return <><button type="button" className="btn btn-secondary" onClick={() => setOpen(true)}>{t('searchTitle')}</button>{open && <Dialog title={t('searchTitle')} onClose={() => { request.current?.abort(); setBusy(false); setOpen(false); }}><form className="form-stack" onSubmit={e => {
   e.preventDefault(); if (busy) return; const f = new FormData(e.currentTarget), query = new URLSearchParams();
   for (const k of ['q','sender','type']) { const v = String(f.get(k) || '').trim(); if (v) query.set(k, v); }
   if (f.get('from')) query.set('from', `${f.get('from')}T00:00:00.000Z`);

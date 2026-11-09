@@ -1,3 +1,5 @@
+import { localizeApiError } from './i18n';
+import { translate as tr, useLanguage } from './i18n';
 import { coalescedRefresh } from './coalesced-refresh';
 import { soundSessionTimes } from './sound';
 import {
@@ -40,6 +42,7 @@ export function useApp() {
   return value;
 }
 export function AppProvider({ children }: { children: ReactNode }) {
+  useLanguage();
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
     [csrfToken, setToken] = useState(""),
@@ -79,7 +82,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [login]);
   useEffect(() => {
     reloadUser()
-      .catch(e => { if (!(e instanceof ApiError && e.status === 401)) toast(e.message || "检查登录状态失败，请刷新重试", true); })
+      .catch(e => { if (!(e instanceof ApiError && e.status === 401)) toast(e.message || tr('screen420'), true); })
       .finally(() => setLoading(false));
   }, [reloadUser, toast]);
   const refreshPass = useCallback(async () => {
@@ -181,7 +184,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     client.on("connect_error", () => setConnected(false));
     client.on("operation:error", (data: { error: string }) =>
-      toast(data.error, true),
+      toast(localizeApiError(data.error), true),
     );
     const update = () => {
       setSync((x) => x + 1);
@@ -256,7 +259,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           role={notice.error ? "alert" : "status"}
         >
           <span>{notice.message}</span>
-          <button aria-label="关闭通知" onClick={() => setNotice(null)}>
+          <button aria-label={tr('screen421')} onClick={() => setNotice(null)}>
             ×
           </button>
         </div>

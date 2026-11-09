@@ -51,7 +51,7 @@ it('retains focus and draft on failure and permits a successful retry', async ()
 it('keeps focus while pending, prevents duplicate submits, and does not steal focus after deliberate navigation', async () => {
   await text('pending'); let resolve!: (value: unknown) => void;
   mock.api.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
-  await enter(); expect(textarea.readOnly).toBe(true); expect(textarea.disabled).toBe(false); expect(document.activeElement).toBe(textarea);
+  await enter(); expect(textarea.readOnly).toBe(false); expect(textarea.disabled).toBe(false); expect(document.activeElement).toBe(textarea);
   await enter();
   const other = document.createElement('button'); host.append(other); other.focus();
   await act(async () => resolve(message('pending')));
@@ -70,4 +70,36 @@ it('does not send Shift+Enter and respects modifier and IME shortcuts', async ()
   expect(shouldSend({ ...e, ctrlKey: true }, 'modifier')).toBe(true);
   expect(shouldSend({ ...e, metaKey: true }, 'modifier')).toBe(true);
   expect(shouldSend({ ...e, nativeEvent: { isComposing: true } }, 'enter')).toBe(false);
+});
+
+it('queues new typing during a slow request without losing or duplicating messages', async () => {
+  let resolve!: (value: unknown) => void;
+  mock.api.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+  await text('first slow'); await enter();
+  expect(textarea.value).toBe(''); expect(textarea.readOnly).toBe(false);
+  await text('second queued'); await enter();
+  await text('third queued'); await enter();
+  await text('still editing');
+  expect(textarea.value).toBe('still editing'); expect(document.activeElement).toBe(textarea);
+  await act(async () => resolve(message('first slow')));
+  const posts = mock.api.mock.calls.filter(([path, options]) => path.endsWith('/messages') && options?.method === 'POST');
+  expect(posts.map(([,options])=>options.body.content)).toEqual(['first slow','second queued','third queued']);
+  expect(new Set(posts.map(([,options])=>options.body.clientId)).size).toBe(3);
+  expect(textarea.value).toBe('still editing'); expect(document.activeElement).toBe(textarea);
+});
+it('keeps the failed snapshot and newer typing separately and retries in order', async () => {
+  let reject!: (value: unknown) => void;
+  mock.api.mockImplementationOnce(() => new Promise((_,r) => { reject = r; }));
+  await text('original failed'); await enter();
+  await text('next message'); await enter();
+  await text('unfinished draft');
+  await act(async () => reject(new Error('offline')));
+  expect(textarea.value).toBe('unfinished draft');
+  expect(host.querySelector('.outbox-status')?.textContent).toContain('original failed');
+  const retry = host.querySelector('.outbox-status button') as HTMLButtonElement;
+  await act(async () => retry.click());
+  const posts = mock.api.mock.calls.filter(([path, options]) => path.endsWith('/messages') && options?.method === 'POST');
+  expect(posts.map(([,options])=>options.body.content)).toEqual(['original failed','original failed','next message']);
+  expect(posts[0]![1].body.clientId).toBe(posts[1]![1].body.clientId);
+  expect(textarea.value).toBe('unfinished draft');
 });
