@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String               @id @default(cuid())
+  username         String               @unique
+  email            String               @unique
+  passwordHash     String
+  displayName      String
+  avatarUrl        String?
+  bio              String               @default("")
+  role             String               @default("USER")
+  status           String               @default("OFFLINE")
+  banned           Boolean              @default(false)
+  lastSeenAt       DateTime             @default(now())
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  sessions         Session[]
+  friendships      Friendship[]         @relation("FriendshipUser")
+  friends          Friendship[]         @relation("FriendshipFriend")
+  sentRequests     FriendRequest[]      @relation("RequestFrom")
+  receivedRequests FriendRequest[]      @relation("RequestTo")
+  memberships      ConversationMember[]
+  messages         Message[]
+  attachments      MessageAttachment[]
+  reads            MessageRead[]
+  hidden           MessageHidden[]
+  blocks           BlockedUser[]        @relation("Blocker")
+  blockedBy        BlockedUser[]        @relation("Blocked")
+  adminActions     AdminAction[]
+  resets           PasswordReset[]
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  csrfToken String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Friendship {
+  userId    String
+  friendId  String
+  createdAt DateTime @default(now())
+  user      User     @relation("FriendshipUser", fields: [userId], references: [id], onDelete: Cascade)
+  friend    User     @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@id([userId, friendId])
+}
+
+model FriendRequest {
+  id        String   @id @default(cuid())
+  fromId    String
+  toId      String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  from      User     @relation("RequestFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to        User     @relation("RequestTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId])
+  @@index([toId, status])
+}
+
+model Conversation {
+  id          String               @id @default(cuid())
+  type        String
+  directKey   String?              @unique
+  name        String?
+  avatarUrl   String?
+  description String               @default("")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  members     ConversationMember[]
+  messages    Message[]
+}
+
+model ConversationMember {
+  conversationId  String
+  userId          String
+  role            String       @default("MEMBER")
+  joinedAt        DateTime     @default(now())
+  lastReadAt      DateTime     @default(now())
+  lastDeliveredAt DateTime     @default(now())
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String              @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String              @default("")
+  clientId       String
+  replyToId      String?
+  createdAt      DateTime            @default(now())
+  editedAt       DateTime?
+  retractedAt    DateTime?
+  conversation   Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User                @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  replyTo        Message?            @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        Message[]           @relation("Replies")
+  attachments    MessageAttachment[]
+  reads          MessageRead[]
+  hidden         MessageHidden[]
+
+  @@unique([senderId, clientId])
+  @@index([conversationId, createdAt, id])
+}
+
+model MessageAttachment {
+  id         String   @id @default(cuid())
+  ownerId    String
+  messageId  String?
+  filename   String
+  mimeType   String
+  size       Int
+  storageKey String   @unique
+  createdAt  DateTime @default(now())
+  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  message    Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId])
+}
+
+model MessageRead {
+  messageId   String
+  userId      String
+  deliveredAt DateTime?
+  readAt      DateTime?
+  message     Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+}
+
+model MessageHidden {
+  messageId String
+  userId    String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+}
+
+model BlockedUser {
+  userId    String
+  blockedId String
+  createdAt DateTime @default(now())
+  user      User     @relation("Blocker", fields: [userId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([userId, blockedId])
+}
+
+model AdminAction {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String
+  targetId  String
+  reason    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  actor     User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

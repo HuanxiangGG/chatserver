@@ -1,14 +1,34 @@
 {
-  "name": "harbor-chat", "private": true, "version": "1.0.0",
-  "workspaces": ["backend", "frontend"],
-  "engines": {"node": ">=22.12"},
+  "name": "harbor-chat",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
-    "dev:backend": "npm run dev -w backend", "dev:frontend": "npm run dev -w frontend",
-    "typecheck": "npm run typecheck --workspaces", "build": "npm run build --workspaces",
-    "test": "npm run test -w backend", "db:generate": "prisma generate --schema prisma/schema.prisma",
-    "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma", "db:seed": "npm run seed -w backend",
+    "dev:backend": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend",
+    "typecheck": "npm run typecheck --workspaces",
+    "build": "npm run build --workspaces",
+    "test": "npm run test -w backend",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:seed": "npm run seed -w backend",
     "admin:create": "npm run admin:create -w backend"
   },
-  "devDependencies": {"prisma": "6.19.3", "typescript": "~5.9.3", "@types/node": "^22.19.0"},
-  "prisma": {"schema": "prisma/schema.prisma"}
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "prisma": "6.19.3",
+    "typescript": "~5.9.3"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2"
+  }
 }
