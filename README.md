@@ -302,3 +302,50 @@ docker compose exec -it backend npm run recovery:create
 - 尚无自动附件过期清理/用户配额，未发送附件可能占用磁盘；需监控磁盘并后续增加有权限和保留策略的清理任务。
 - PostgreSQL 是持久数据源；Redis 用于在线、限流和跨实例广播。Redis 不可用时涉及限流/实时的操作失败关闭，健康检查显示异常。
 - 默认部署不自动发布公网；证书签发、域名、防火墙、备份外存、监控和实际服务器验收需在目标环境完成。
+
+## 开发分支：声音、搜索、预览与备份扩展
+
+当前开发分支增加以下实现，**整体升级仍未完成，请勿视为正式发布**：
+
+- 声音设置支持本地访客保存、登录后同步到独立 `UserPreference` 表；`GET/PUT /api/users/me/sound` 需要当前会话，PUT 保留 CSRF 与 Origin 检查。主开关、私聊/群聊/@与回复分类、音量、两种普通提示音、测试音、免打扰及跨午夜时段均可配置。
+- 三段原创合成 WAV 位于 `frontend/public/sounds/`，不请求外部音频。需用户点击启用解锁 HTMLAudio 播放；浏览器没有单独可申请的“音频权限”，拒绝播放时显示页面内提示。普通通知与特别提醒共用一秒节流，避免连续播放。
+- 只监听 Socket `message:new` 播放声音；自己的消息、重复 ID、前台正在查看会话的普通消息、静音与免打扰均不播放。新增只下发给已认证 Socket 的 `session:ready { serverTime }`，用服务器连接时间过滤重连旧消息，避免客户端时钟偏差。HTTP 历史同步不触发声音。
+- `GET /api/conversations/:id/search` 支持 q/sender/from/to/type/cursor/limit；只搜索当前有权限会话，排除自己隐藏与撤回消息；日期按 UTC，limit 1–50。`GET /api/conversations/:id/messages/:messageId/context` 获取原消息周围上下文。搜索结果和回复引用可定位原消息。
+- 图片可在页面内放大、关闭及下载；PDF 保持安全下载。附件地址始终由 ID 构造并经过已有下载权限/MIME/文件名检查，不开放上传目录。
+- 新增 `20261109110000_user_preferences` 和 `20261109120000_message_search`，只新增表、扩展和索引，不清空旧记录。搜索迁移使用 PostgreSQL `pg_trgm`（可信扩展）；数据库迁移账号需要相应 CREATE 权限。大表创建 GIN 索引可能影响写入，应在维护窗口完成，先在隔离备份库演练。不能通过删除迁移或重置数据库绕过。
+
+声音和搜索面板具备独立中英文词典；完整旧页面翻译尚未完成。`npm run i18n:check` 已加入 CI，当前会因旧页面的硬编码文本失败，分支不具备合并发布条件。现有检查仍需补齐完整翻译使用关系分析；不应将词典键配对检查等同于完整国际化验收。
+
+### 每日私密备份和隔离恢复
+
+`./scripts/backup.sh` 使用当前 Compose 项目生成数据库 dump、上传 tar.gz 和 SHA256 清单。默认 `backups/`（已忽略 Git），目录必须为 700、文件为 600；不得选网站静态目录。脚本加锁、检查磁盘空间、验证输出格式并失败返回非零。上传文件仍可能在备份时发生变化，严格一致性快照需要运维暂停写入或使用卷快照；该脚本不自动中断用户聊天。
+
+环境变量：`BACKUP_DIR`（默认 backups）、`BACKUP_RETENTION_DAYS`（默认14，0不清理）、`BACKUP_MIN_FREE_MB`（默认512，另预留估计数据量两倍空间）。只清理本目录中到期的已完成备份文件，绝不清理数据库、Redis 或上传卷。备份含私人内容，应保存到网站根目录之外，另行加密和异地复制。
+
+Ubuntu/Debian 可使用提供的 systemd 模板。先编辑服务中的项目路径、原 `COMPOSE_FILE` 与备份目录，再安装；不要直接覆盖现有其他服务：
+
+```bash
+sudo install -d -m 700 /var/backups/harbor
+sudo install -m 644 scripts/systemd/harbor-backup.service.example /etc/systemd/system/harbor-backup.service
+sudo install -m 644 scripts/systemd/harbor-backup.timer.example /etc/systemd/system/harbor-backup.timer
+sudo nano /etc/systemd/system/harbor-backup.service
+sudo systemctl daemon-reload
+sudo systemctl start harbor-backup.service
+sudo systemctl status harbor-backup.service
+# 先完成手动备份和隔离恢复核对，再开启每日任务
+sudo systemctl enable --now harbor-backup.timer
+systemctl list-timers harbor-backup.timer
+```
+
+失败可通过 `systemctl --failed` 和 `journalctl -u harbor-backup.service` 查看，尚未配置外部告警接收渠道。本次未在生产安装或启用定时器。
+
+```bash
+# 先校验 SHA256；替换为同一次备份清单
+(cd /var/backups/harbor && sha256sum -c manifest-TIMESTAMP.sha256)
+# 仅恢复到全新库，现有库重名会失败
+./scripts/restore.sh /var/backups/harbor/database-TIMESTAMP.dump harbor_restore_verification
+# 仅写新建隔离目录，拒绝链接、设备条目和路径穿越
+python3 scripts/restore-uploads.py /var/backups/harbor/uploads-TIMESTAMP.tar.gz /var/backups/harbor/harbor_restore_uploads
+```
+
+脚本和设置的自动化测试不代表真实生产恢复已经演练。恢复后核对记录和文件，再决定应用切换；恢复脚本不自动覆盖生产库或上传目录。
