@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma, requireAuth, validate, HttpError, asyncRoute, publicUserSelect, assertUnblocked, consumeLimit } from './context.js';
 import { emitUsers } from './realtime.js';
+import { channelPermission } from './channel-policy.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -20,6 +21,7 @@ export function serializeMessage(message: FullMessage) {
     attachments: message.retractedAt ? [] : message.attachments.map(a => ({ ...a, originalName: a.filename, url: `/api/uploads/${a.id}` })) };
 }
 export async function membership(conversationId: string, userId: string, db: Prisma.TransactionClient = prisma) {
+  await channelPermission(conversationId, userId, false, db);
   const member = await db.conversationMember.findUnique({ where: { conversationId_userId: { conversationId, userId } }, include: { conversation: true } });
   if (!member) throw new HttpError(403, '你无权访问这个会话');
   return member;
@@ -49,6 +51,7 @@ async function assertFriends(userId: string, userIds: string[]) {
 }
 async function writable(id: string, userId: string, db: Prisma.TransactionClient = prisma) {
   const member = await membership(id, userId, db);
+  await channelPermission(id, userId, true, db);
   if (member.conversation.type === 'DIRECT') {
     const others = (await memberIds(id, db)).filter(u => u !== userId);
     for (const other of others) {
@@ -62,7 +65,7 @@ async function writable(id: string, userId: string, db: Prisma.TransactionClient
 
 router.get('/conversations', asyncRoute(async (req, res) => {
   const conversations = await prisma.conversation.findMany({ where: { members: { some: { userId: req.user.id } } }, orderBy: { updatedAt: 'desc' }, take: 200,
-    include: { members: { include: { user: { select: publicUserSelect } } }, messages: { where: { hidden: { none: { userId: req.user.id } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1, include: messageInclude } } });
+    include: { channel: true, members: { include: { user: { select: publicUserSelect } } }, messages: { where: { hidden: { none: { userId: req.user.id } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1, include: messageInclude } } });
   res.json(await Promise.all(conversations.map(async c => {
     const unreadCount = await prisma.message.count({ where: { conversationId: c.id, senderId: { not: req.user.id }, reads: { none: { userId: req.user.id, readAt: { not: null } } }, hidden: { none: { userId: req.user.id } }, retractedAt: null } });
     const { messages, ...rest } = c;
@@ -74,7 +77,7 @@ router.post('/conversations/direct', asyncRoute(async (req, res) => {
   if (userId === req.user.id) throw new HttpError(400, '不能与自己创建私聊');
   await assertFriends(req.user.id, [userId]);
   const directKey = [req.user.id, userId].sort().join(':');
-  const conversation = await prisma.conversation.upsert({ where: { directKey }, update: {}, create: { type: 'DIRECT', directKey, members: { create: [{ userId: req.user.id }, { userId }] } }, include: { members: { include: { user: { select: publicUserSelect } } } } });
+  const conversation = await prisma.conversation.upsert({ where: { directKey }, update: {}, create: { type: 'DIRECT', directKey, members: { create: [{ userId: req.user.id }, { userId }] } }, include: { channel: true, members: { include: { user: { select: publicUserSelect } } } } });
   await notifyConversation(conversation.id);
   res.status(201).json(conversation);
 }));
@@ -84,13 +87,16 @@ router.post('/conversations/group', asyncRoute(async (req, res) => {
   const userIds = [...new Set(data.userIds)].filter(id => id !== req.user.id);
   if (!userIds.length) throw new HttpError(400, '请至少邀请一位好友');
   await assertFriends(req.user.id, userIds);
-  const conversation = await prisma.conversation.create({ data: { type: 'GROUP', name: data.name, description: data.description, members: { create: [{ userId: req.user.id, role: 'OWNER' }, ...userIds.map(userId => ({ userId, role: 'MEMBER' }))] } }, include: { members: { include: { user: { select: publicUserSelect } } } } });
+  const conversation = await prisma.conversation.create({ data: { type: 'GROUP', name: data.name, description: data.description, members: { create: [{ userId: req.user.id, role: 'OWNER' }, ...userIds.map(userId => ({ userId, role: 'MEMBER' }))] } }, include: { channel: true, members: { include: { user: { select: publicUserSelect } } } } });
   await notifyConversation(conversation.id);
   res.status(201).json(conversation);
 }));
 router.get('/conversations/:id', asyncRoute(async (req, res) => {
   const id = validate(idSchema, req.params.id); await membership(id, req.user.id);
-  res.json(await prisma.conversation.findUnique({ where: { id }, include: { members: { include: { user: { select: publicUserSelect } } } } }));
+  const conversation = await prisma.conversation.findUnique({ where: { id }, include: { channel: true, members: { include: { user: { select: publicUserSelect } } } } });
+  const access = await channelPermission(id, req.user.id);
+  const canWrite = !access || ((!access.channel.readOnly || ['OWNER', 'ADMIN', 'MODERATOR'].includes(access.member.role)) && (!access.member.mutedUntil || access.member.mutedUntil <= new Date()));
+  res.json({ ...conversation, canWrite });
 }));
 router.patch('/conversations/:id', asyncRoute(async (req, res) => {
   const id = validate(idSchema, req.params.id); await assertGroupAdmin(id, req.user.id);

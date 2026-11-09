@@ -1,3 +1,4 @@
+import { channelPermission } from './channel-policy.js';
 import { Router } from 'express';
 import multer from 'multer';
 import { fileTypeFromBuffer } from 'file-type';
@@ -37,6 +38,7 @@ router.get('/uploads/:id', asyncRoute(async (req, res) => {
   const avatarPath = `/api/uploads/${id}`;
   const isAvatar = attachment.mimeType.startsWith('image/') && (await prisma.user.count({ where: { avatarUrl: avatarPath } }) > 0 || await prisma.conversation.count({ where: { avatarUrl: avatarPath, members: { some: { userId: req.user.id } } } }) > 0);
   const permitted = attachment.ownerId === req.user.id || isAvatar || (attachment.message && !attachment.message.retractedAt && attachment.message.conversation.members.length > 0);
+  if (attachment.ownerId !== req.user.id && attachment.message && !isAvatar) await channelPermission(attachment.message.conversationId, req.user.id);
   if (!permitted) throw new HttpError(403, '无权读取这个文件');
   if (!/^[a-f0-9-]+\.[a-z0-9]+$/.test(attachment.storageKey)) throw new HttpError(404, '文件不存在');
   res.setHeader('Content-Type', attachment.mimeType);

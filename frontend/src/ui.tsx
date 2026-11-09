@@ -59,12 +59,12 @@ export function Avatar({
   );
 }
 export function conversationTitle(c: Conversation, me: string) {
-  return c.type === "GROUP"
+  return c.type !== "DIRECT"
     ? c.name || "未命名群聊"
     : c.members.find((m) => m.userId !== me)?.user.displayName || "私聊";
 }
 export function conversationUser(c: Conversation, me: string) {
-  return c.type === "GROUP"
+  return c.type !== "DIRECT"
     ? { displayName: c.name || "群聊", avatarUrl: c.avatarUrl }
     : c.members.find((m) => m.userId !== me)?.user;
 }

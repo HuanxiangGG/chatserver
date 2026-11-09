@@ -13,6 +13,7 @@ import {
   File,
   Image,
   Info,
+  Hash,
   LoaderCircle,
   MessageCircle,
   MoreHorizontal,
@@ -28,7 +29,8 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { api, json, uploadFile } from "./api";
+import { MediaDraft, clipboardImages } from './media-draft';
+import { ApiError, api, json, uploadFile } from "./api";
 import { useApp } from "./state";
 import type { Attachment, Conversation, Message } from "./types";
 import {
@@ -77,7 +79,7 @@ export function ChatPage() {
     [hasMore, setHasMore] = useState(false),
     [olderLoading, setOlderLoading] = useState(false),
     [draft, setDraft] = useState(""),
-    [attachments, setAttachments] = useState<Attachment[]>([]),
+    [, renderDraft] = useState(0),
     [uploading, setUploading] = useState(false),
     [uploadProgress, setUploadProgress] = useState(0),
     [uploadName, setUploadName] = useState(""),
@@ -101,9 +103,17 @@ export function ChatPage() {
     typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     activeId = useRef(id),
     readIds = useRef(new Set<string>()),
-    clientId = useRef(crypto.randomUUID()),
     task = useTask(),
     navigate = useNavigate();
+  const drafts = useRef(new Map<string, MediaDraft>());
+  const sendLock = useRef(false);
+  const queue = (key = id) => {
+    if (!key) throw Error('请先选择会话');
+    if (!drafts.current.has(key)) drafts.current.set(key, new MediaDraft());
+    return drafts.current.get(key)!;
+  };
+  const media = id ? queue() : null;
+  useEffect(() => () => { drafts.current.forEach(d => d.clear()); drafts.current.clear(); }, []);
   activeId.current = id;
   const load = useCallback(
     async (quiet = false) => {
@@ -150,12 +160,10 @@ export function ChatPage() {
   useEffect(() => {
     setMessages([]);
     setConversation(null);
-    setDraft("");
-    setAttachments([]);
+    setDraft(id ? queue(id).text : "");
     setReply(null);
     setTyping({});
     setInfoOpen(false);
-    clientId.current = crypto.randomUUID();
     void load();
   }, [load]);
   useEffect(() => {
@@ -163,7 +171,7 @@ export function ChatPage() {
   }, [sync, id, load]);
   useEffect(() => {
     const updated = conversations.find((c) => c.id === id);
-    if (updated) setConversation(updated);
+    if (updated) setConversation(old => ({ ...updated, canWrite: old?.canWrite }));
   }, [conversations, id]);
   useEffect(() => {
     if (!socket || !id) return;
@@ -314,6 +322,7 @@ export function ChatPage() {
   }
   function updateDraft(value: string) {
     setDraft(value);
+    if (id) queue().text = value;
     if (!id || !socket) return;
     socket.emit("typing", { conversationId: id, typing: !!value });
     if (typingTimer.current) clearTimeout(typingTimer.current);
@@ -324,69 +333,42 @@ export function ChatPage() {
   }
   async function send(e?: FormEvent) {
     e?.preventDefault();
-    if (!id || sending || uploading || (!draft.trim() && !attachments.length))
-      return;
+    if (conversation?.canWrite === false) return;
+    if (!id || sendLock.current || (!draft.trim() && !queue().items.length)) return;
+    const targetId = id, pending = queue(), content = draft.trim(), replyToId = reply?.id;
+    sendLock.current = true;
     setSending(true);
     try {
-      const result = await api<Message>(
-        `/conversations/${id}/messages`,
-        json("POST", {
-          content: draft.trim(),
-          attachmentIds: attachments.map((a) => a.id),
-          replyToId: reply?.id,
-          clientId: clientId.current,
-        }),
-      );
-      setMessages((old) =>
-        old.some((m) => m.id === result.id) ? old : old.concat(result),
-      );
-      setDraft("");
-      setAttachments([]);
-      setReply(null);
-      clientId.current = crypto.randomUUID();
-      socket?.emit("typing", { conversationId: id, typing: false });
-      void refresh().catch(() => {});
-      setTimeout(() => end.current?.scrollIntoView({ behavior: "smooth" }), 50);
-      if (composer.current) {
-        composer.current.style.height = "auto";
-        composer.current.focus();
+      setUploading(!!pending.items.length);
+      const attachmentIds = await pending.upload(chosen => {
+        if (activeId.current === targetId) { setUploadName(chosen.name); setUploadProgress(0); }
+        return uploadFile<Attachment>(chosen, progress => { if (activeId.current === targetId) setUploadProgress(progress); });
+      });
+      setUploading(false);
+      const result = await api<Message>(`/conversations/${targetId}/messages`, json('POST', pending.prepare(content, attachmentIds, replyToId)));
+      pending.clear();
+      if (activeId.current === targetId) {
+        setMessages(old => old.some(m => m.id === result.id) ? old : old.concat(result));
+        setDraft(''); setReply(null); renderDraft(v => v + 1);
+        end.current?.scrollIntoView({ behavior: 'smooth' });
+        if (composer.current) { composer.current.style.height = 'auto'; composer.current.focus(); }
       }
-    } catch (e) {
-      toast((e as Error).message, true);
+      socket?.emit('typing', { conversationId: targetId, typing: false });
+      void refresh().catch(() => {});
+    } catch (error) {
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) pending.rejected();
+      renderDraft(v => v + 1);
+      toast((error as Error).message + '；草稿已保留，可再次发送重试', true);
     } finally {
-      setSending(false);
+      sendLock.current = false; setSending(false); setUploading(false);
     }
   }
-  async function upload(files: FileList | null) {
-    if (!files?.length || uploading) return;
-    setUploading(true);
-    try {
-      if (attachments.length + files.length > 5)
-        throw Error("每条消息最多添加 5 个文件");
-      for (const chosen of [...files]) {
-        if (chosen.size > 10 * 1024 * 1024)
-          throw Error("单个文件不能超过 10 MB");
-        if (
-          ![
-            "image/png",
-            "image/jpeg",
-            "image/gif",
-            "image/webp",
-            "application/pdf",
-          ].includes(chosen.type)
-        )
-          throw Error("支持 PNG、JPEG、GIF、WebP 图片和 PDF 文件");
-        setUploadName(chosen.name);
-        setUploadProgress(0);
-        const result = await uploadFile<Attachment>(chosen, setUploadProgress);
-        setAttachments((old) => [...old, result]);
-      }
-    } catch (e) {
-      toast((e as Error).message, true);
-    } finally {
-      setUploading(false);
-      if (file.current) file.current.value = "";
-    }
+  function upload(files: FileList | File[] | null) {
+    if (conversation?.canWrite === false) return;
+    if (!files?.length || sendLock.current || !id) return;
+    try { queue().stage(Array.from(files)); renderDraft(v => v + 1); }
+    catch (error) { toast((error as Error).message, true); }
+    if (file.current) file.current.value = '';
   }
   const selectedTyping = Object.entries(typing)
     .filter(([, at]) => at > Date.now() - 4500)
@@ -482,26 +464,28 @@ export function ChatPage() {
     );
   const title = conversationTitle(conversation, user!.id),
     other = conversationUser(conversation, user!.id),
-    isGroup = conversation.type === "GROUP";
+    isChannel = conversation.type === "CHANNEL",
+    isGroup = conversation.type !== "DIRECT",
+    writable = conversation.canWrite !== false;
   return (
     <div className="chat-room">
       <div className="chat-primary">
         <header className="chat-header">
           <Link
             className="icon-btn mobile-back"
-            to="/chat"
-            aria-label="返回消息列表"
+            to={isChannel ? `/servers/${conversation.channel?.serverId}` : "/chat"}
+            aria-label="返回列表"
           >
             <ArrowLeft size={22} />
           </Link>
-          <Avatar user={other} group={isGroup} showStatus={!isGroup} />
+          {isChannel ? <div className="channel-symbol"><Hash size={28} /></div> : <Avatar user={other} group={isGroup} showStatus={!isGroup} />}
           <div className="chat-header-title">
             <h1>
               {title}
-              {isGroup && <span className="group-tag">群聊</span>}
+              {isGroup && <span className="group-tag">{isChannel ? "文字频道" : "群聊"}</span>}
             </h1>
             <span>
-              {isGroup
+              {isChannel ? conversation.description || "文字频道" : isGroup
                 ? `${conversation.members.length} 位成员 · ${conversation.members.filter((m) => m.user.status === "ONLINE").length} 人在线`
                 : statusText(other)}
             </span>
@@ -518,8 +502,8 @@ export function ChatPage() {
             {isGroup && (
               <Link
                 className="icon-btn"
-                to={`/groups/${id}`}
-                aria-label="群聊管理"
+                to={isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`}
+                aria-label={isChannel ? "社区管理" : "群聊管理"}
               >
                 <MoreHorizontal size={23} />
               </Link>
@@ -559,7 +543,7 @@ export function ChatPage() {
           )}
           {messages.length === 0 ? (
             <div className="conversation-start">
-              <Avatar user={other} group={isGroup} size="xl" />
+              {isChannel ? <div className="channel-symbol channel-symbol-large"><Hash size={40} /></div> : <Avatar user={other} group={isGroup} size="xl" />}
               <h2>
                 {isGroup ? "新的空间，新的对话" : `向 ${title} 打个招呼吧`}
               </h2>
@@ -659,7 +643,9 @@ export function ChatPage() {
             </>
           )}
         </div>
-        <form className="composer-wrap" onSubmit={send}>
+        <form className="composer-wrap" onSubmit={send}
+          onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }}
+          onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); upload(e.dataTransfer.files); } }}>
           {reply && (
             <div className="composer-reply">
               <Reply size={15} />
@@ -677,29 +663,20 @@ export function ChatPage() {
               </button>
             </div>
           )}
-          {attachments.length > 0 && (
-            <div className="draft-attachments">
-              {attachments.map((a) => (
-                <span key={a.id}>
-                  <File size={16} />
-                  {a.originalName || a.filename}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setAttachments((v) => v.filter((x) => x.id !== a.id))
-                    }
-                    aria-label="移除附件"
-                  >
-                    <X size={14} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
+          {!!media?.items.length && <div className="pending-media" aria-label="待发送附件">
+            {media.items.map(item => <div className="pending-media-item" key={item.id}>
+              {item.preview ? <a href={item.preview} target="_blank" rel="noreferrer" aria-label={`预览 ${item.file.name}`}><img src={item.preview} alt={item.file.name} /></a> : <File size={24} />}
+              <span>{item.file.name}<small>{(item.file.size / 1024 / 1024).toFixed(2)} MiB{item.attachment ? ' · 已上传' : ' · 待发送'}</small></span>
+              <button type="button" className="icon-btn" disabled={sending || !!media.delivery} aria-label={`移除 ${item.file.name}`} onClick={() => { media.remove(item.id); renderDraft(v => v + 1); }}><X size={16} /></button>
+            </div>)}
+          </div>}
+          {media?.delivery && !sending && <p className="form-error" role="status">消息确认失败，原内容已保留。请再次点击发送确认，确认前暂停编辑以避免重复消息。</p>}
           {uploading && <div className="upload-progress" role="status"><span>{uploadProgress === 100 ? '正在验证文件' : `正在上传 ${uploadProgress}%`} · {uploadName}</span><progress max={100} value={uploadProgress} aria-label="文件上传进度" /></div>}
           <div className="composer">
             <textarea
               ref={composer}
+              disabled={!writable || sending || !!media?.delivery}
+              onPaste={e => { const images = clipboardImages(e.clipboardData.items); if (images.length) { e.preventDefault(); upload(images); } }}
               rows={1}
               value={draft}
               onChange={(e) => {
@@ -720,7 +697,7 @@ export function ChatPage() {
               onBlur={() =>
                 socket?.emit("typing", { conversationId: id, typing: false })
               }
-              placeholder={`发送消息给${isGroup ? "群聊" : ` ${title}`}…`}
+              placeholder={!writable ? "此频道只读，或你正在被禁言" : `发送消息到 ${title}…`}
               aria-label="消息内容"
               maxLength={4000}
             />
@@ -740,7 +717,7 @@ export function ChatPage() {
                   className="icon-btn"
                   aria-label="添加图片或文件"
                   onClick={() => file.current?.click()}
-                  disabled={uploading || sending}
+                  disabled={!writable || uploading || sending}
                 >
                   {uploading ? (
                     <LoaderCircle size={20} className="spin" />
@@ -757,7 +734,7 @@ export function ChatPage() {
                   onChange={(e) => void upload(e.target.files)}
                 />
                 <span className="composer-file-hint">
-                  图片 / 文件 · 最大 10 MB
+                  图片 / 文件 · 最大 10 MiB · 可粘贴或拖入
                 </span>
               </div>
               <div>
@@ -768,9 +745,10 @@ export function ChatPage() {
                   type="submit"
                   className="send-button"
                   disabled={
+                    !writable ||
                     sending ||
                     uploading ||
-                    (!draft.trim() && !attachments.length)
+                    (!draft.trim() && !media?.items.length)
                   }
                   aria-label="发送消息"
                 >
@@ -824,7 +802,7 @@ export function ChatPage() {
             </button>
           </header>
           <div className="info-profile">
-            <Avatar user={other} group={isGroup} size="xl" />
+            {isChannel ? <div className="channel-symbol channel-symbol-large"><Hash size={40} /></div> : <Avatar user={other} group={isGroup} size="xl" />}
             <h2>{title}</h2>
             <p>
               {isGroup
@@ -840,7 +818,7 @@ export function ChatPage() {
           {isGroup ? (
             <>
               <div className="info-section-title">
-                群成员 <span>{conversation.members.length}</span>
+                {isChannel ? "频道成员" : "群成员"} <span>{conversation.members.length}</span>
               </div>
               <div className="info-member-list">
                 {conversation.members.map((m) => (
@@ -850,7 +828,7 @@ export function ChatPage() {
                       {m.user.displayName}
                       <small>
                         {m.role === "OWNER"
-                          ? "群主"
+                          ? (isChannel ? "所有者" : "群主")
                           : m.role === "ADMIN"
                             ? "管理员"
                             : statusText(m.user)}
@@ -860,8 +838,8 @@ export function ChatPage() {
                   </Link>
                 ))}
               </div>
-              <Link to={`/groups/${id}`} className="btn btn-secondary">
-                管理群聊 <ArrowRight size={15} />
+              <Link to={isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`} className="btn btn-secondary">
+                {isChannel ? "社区成员与管理" : "管理群聊"} <ArrowRight size={15} />
               </Link>
             </>
           ) : (
