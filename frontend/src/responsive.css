@@ -18,7 +18,7 @@
     position: absolute;
     inset: 0 0 0 auto;
     width: 300px;
-    box-shadow: -20px 0 60px #0003;
+    box-shadow: -4px 0 16px #0002;
   }
   .info-scrim {
     display: block;
@@ -286,7 +286,7 @@
     inset: 0 auto 0 0;
     width: min(90%, 360px);
     z-index: 50;
-    box-shadow: 20px 0 50px #0005;
+    box-shadow: 4px 0 16px #0003;
     padding-top: env(safe-area-inset-top);
     background: var(--surface);
   }
@@ -401,10 +401,6 @@
   }
   .message-body {
     padding: 10px 12px;
-    border-radius: 3px 16px 16px 16px;
-  }
-  .own .message-body {
-    border-radius: 16px 3px 16px 16px;
   }
   .message-meta {
     font-size: 10px;
@@ -476,9 +472,6 @@
     max-height: 55%;
     background: var(--app);
   }
-  .composer {
-    border-radius: 16px;
-  }
   .composer > textarea {
     padding: 12px 12px 4px;
     min-height: 44px;
@@ -540,11 +533,10 @@
     inset: 8% 0 0;
     width: 100%;
     border: 1px solid var(--border);
-    border-radius: 24px 24px 0 0;
+    border-radius: 12px 12px 0 0;
     padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
     z-index: 60;
-    box-shadow: 0 -15px 50px #0005;
-    animation: panel-in var(--duration);
+    box-shadow: 0 -4px 16px #0003;
   }
   .info-scrim {
     z-index: 59;
@@ -559,7 +551,7 @@
   .info-profile .avatar-xl {
     width: 62px;
     height: 62px;
-    border-radius: 20px;
+    border-radius: 12px;
   }
   .info-member-list {
     max-height: 200px;
@@ -730,7 +722,6 @@
     padding: 12px;
   }
   .dialog {
-    border-radius: 20px;
     padding: 18px;
   }
   .dialog > header {
@@ -833,24 +824,6 @@
   .welcome-center {
     padding: 35px 20px;
   }
-  .welcome-center h1 {
-    font-size: 28px;
-  }
-  .welcome-top,
-  .welcome-bottom {
-    padding: 20px;
-  }
-  .welcome-illustration {
-    height: 125px;
-  }
-  .ring-outer {
-    width: 170px;
-    height: 170px;
-  }
-  .ring-inner {
-    width: 140px;
-    height: 140px;
-  }
   .welcome-actions > .btn {
     flex: 1;
   }
@@ -921,7 +894,7 @@
     width: 100%;
     max-width: 100%;
     height: 92%;
-    border-radius: 24px 24px 0 0;
+    border-radius: 12px 12px 0 0;
     padding-bottom: calc(20px + env(safe-area-inset-bottom));
   }
   .info-dialog .conversation-info {

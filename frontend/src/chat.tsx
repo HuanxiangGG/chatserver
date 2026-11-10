@@ -19,7 +19,6 @@ import {
   ChevronDown,
   Copy,
   File,
-  Image,
   Info,
   Hash,
   LoaderCircle,
@@ -32,7 +31,6 @@ import {
   Send,
   ShieldCheck,
   Smile,
-  Sparkles,
   Trash2,
   Users,
   X,
@@ -484,54 +482,14 @@ export function ChatPage() {
   if (!id)
     return (
       <section className="welcome-chat">
-        <div className="welcome-top">
-          <span>{tr('screen427')}</span>
-          <span>
-            <span className="tiny-online" /> {tr('screen428')}</span>
-        </div>
         <div className="welcome-center">
-          <div className="welcome-illustration" aria-hidden="true">
-            <div className="welcome-ring ring-outer" />
-            <div className="welcome-ring ring-inner" />
-            <div className="welcome-chat-icon">
-              <MessageCircle size={48} strokeWidth={1.5} />
-              <span />
-            </div>
-            <span className="floating-spark">
-              <Sparkles size={23} />
-            </span>
-            <span className="floating-bubble">
-              {tr('screen429')}<span>👋</span>
-            </span>
-            <span className="floating-dot" />
-          </div>
-          <span className="eyebrow">{tr('screen430')}</span>
-          <h1>
-            {tr('screen431')}<br />
-            {tr('screen432')}<span>。</span>
-          </h1>
-          <p>
-            {tr('screen433')}<br />
-            {tr('screen434')}</p>
+          <MessageCircle size={32} strokeWidth={1.5} aria-hidden="true" />
+          <h1>{tr(conversations.length ? 'screen431' : 'screen432')}</h1>
+          <p>{tr('screen433')}</p>
           <div className="welcome-actions">
-            <Link to="/friends" className="btn btn-primary">
-              {tr('screen435')}<ArrowUpRight size={17} />
-            </Link>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setGroup(true)}
-            >
-              <Plus size={17} />
-              {tr('screen333')}</button>
+            <Link to="/friends" className="btn btn-primary">{tr('screen435')}</Link>
+            <button type="button" className="btn btn-secondary" onClick={() => setGroup(true)}><Plus size={17} />{tr('screen333')}</button>
           </div>
-        </div>
-        <div className="welcome-bottom">
-          <span>
-            <ShieldCheck size={16} /> {tr('screen436')}</span>
-          <span>
-            <CheckCheck size={17} /> {tr('screen437')}</span>
-          <span>
-            <Image size={16} /> {tr('screen438')}</span>
         </div>
         {group && <CreateGroup onClose={() => setGroup(false)} />}
       </section>
@@ -890,7 +848,7 @@ export function ChatPage() {
             {tr('screen482')}<span>
               {draft.length
                 ? `${draft.length} / 4000`
-                : tr('screen483')}
+                : null}
             </span>
           </div>
         </form>

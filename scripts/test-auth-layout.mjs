@@ -17,6 +17,8 @@ for (const [engine,type] of Object.entries({chromium,webkit})) {
    try {
     for (const mode of ['register','login','forgot-password','reset-password']) {
      await page.goto(`${base.origin}/${mode}`);const submit=page.locator('form button[type=submit]');await submit.waitFor();
+     if(width===640)await page.locator('.auth-language select').selectOption('en');
+     assert.equal(await page.locator('.story-art,.art-chip').count(),0);
      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${engine}/${width}/${mode}: horizontal overflow`);
      await page.locator('.auth-screen').evaluate(el=>{el.scrollTop=0});
      await submit.scrollIntoViewIfNeeded();
@@ -46,7 +48,15 @@ for (const [engine,type] of Object.entries({chromium,webkit})) {
    const suffix=randomUUID().replaceAll('-','').slice(0,12),password=`Auth-${randomUUID()}-7!`;
    await page.locator('[name=username]').fill(`auth_${suffix}`);await page.locator('[name=displayName]').fill('Auth layout tester');await page.locator('[name=email]').fill(`auth_${suffix}@example.test`);await page.locator('[name=password]').fill(password);await page.locator('[name=confirmPassword]').fill(password);
    const submit=page.locator('form button[type=submit]');await submit.scrollIntoViewIfNeeded();await submit.click();await page.waitForURL('**/chat',{timeout:20000});
-   results.push({engine,realRegistration:true,passed:true});
+   // Phones open the conversation list; its empty state must offer a real next step.
+   await page.locator('.sidebar-empty a').waitFor();
+   await page.locator('.sidebar-empty a').click();await page.waitForURL('**/friends');
+   await page.goto(`${base.origin}/chat`);await page.setViewportSize({width:1280,height:800});
+   await page.locator('.welcome-chat h1').waitFor();
+   assert.equal(await page.locator('.welcome-illustration,.welcome-top,.welcome-bottom').count(),0);
+   await page.locator('.welcome-actions button').click();await page.locator('[role=dialog]').waitFor();await page.keyboard.press('Escape');
+   await page.locator('.welcome-actions a').click();await page.waitForURL('**/friends');
+   results.push({engine,realRegistration:true,emptyStateActions:true,passed:true});
   } finally {await context.close();}
  } finally {await browser.close();}
 }

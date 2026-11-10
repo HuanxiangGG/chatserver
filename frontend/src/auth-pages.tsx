@@ -8,9 +8,7 @@ import {
   Check,
   Eye,
   EyeOff,
-  MessageCircle,
   ShieldCheck,
-  Sparkles,
   Palette,
 } from "lucide-react";
 import { api, json } from "./api";
@@ -116,28 +114,8 @@ export function AuthPage({
       <section className="auth-story">
         <Brand />
         <div className="story-content">
-          <span className="story-kicker">
-            <span /> {t('auth13')}</span>
-          <h1>
-            {t('auth14')}<br />
-            {t('auth15')}
-          </h1>
-          <p>
-            {t('auth16')}<br />
-            {t('auth17')}</p>
-          <div className="story-art" aria-hidden="true">
-            <div className="art-orbit orbit-1" />
-            <div className="art-orbit orbit-2" />
-            <div className="art-center">
-              <MessageCircle size={53} strokeWidth={1.3} />
-            </div>
-            <span className="art-chip chip-1">
-              <Sparkles size={18} /> {t('auth18')}</span>
-            <span className="art-chip chip-2">
-              <span className="mini-dot" /> {t('auth19')}</span>
-            <span className="art-chip chip-3">
-              <Check size={17} /> {t('auth20')}</span>
-          </div>
+          <h1>{t('auth14')}</h1>
+          <p>{t('auth16')}</p>
         </div>
         <footer>
           <ShieldCheck size={16} />
@@ -153,9 +131,6 @@ export function AuthPage({
         </div>
         <div className="auth-toolbar"><label className="auth-language">{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t('chinese')}</option><option value="en">{t('english')}</option></select></label><button type="button" className="btn btn-secondary auth-appearance" onClick={() => setAppearanceOpen(true)}><Palette size={16}/>{t('appearanceTitle')}</button></div>
         <div className="auth-form-wrap">
-          <span className="eyebrow">
-            {mode === "register" ? t('auth22') : t('auth23')}
-          </span>
           <h2>{titles[mode]}</h2>
           <p>
             {mode === "login"
@@ -340,13 +315,8 @@ export function AuthPage({
               <Link to="/login">{t('auth67')}</Link>
             )}
           </div>
-          <p className="auth-note">
-            {mode === "register"
-              ? t('auth68')
-              : t('auth69')}
-          </p>
+          {mode === "register" && <p className="auth-note">{t('auth68')}</p>}
         </div>
-        <div className="auth-bottom">{t('auth70')}</div>
       </section>
       </div>
       {appearanceOpen && <Dialog title={t('appearanceTitle')} onClose={() => setAppearanceOpen(false)}><AppearanceSettings /></Dialog>}

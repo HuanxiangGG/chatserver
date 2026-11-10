@@ -20,11 +20,7 @@
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  background: linear-gradient(
-    175deg,
-    color-mix(in srgb, var(--accent) 4%, var(--surface)),
-    var(--surface)
-  );
+  background: var(--surface);
   border-right: 1px solid var(--border);
   padding: 20px 14px 12px;
   gap: 16px;

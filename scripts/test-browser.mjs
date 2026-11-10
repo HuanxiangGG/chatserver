@@ -111,7 +111,7 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
        await page.locator('.theme-choice').nth(theme === 'dark' ? 0 : 1).click();
        await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, theme);
        assert.equal(await page.locator('html').getAttribute('lang'), language);
-       assert((await page.title()).includes(language === 'en' ? 'Instant conversations' : '\u5373\u65f6\u4ea4\u6d41'), 'Document title did not change language');
+       assert((await page.title()).includes(language === 'en' ? 'Messages' : '\u804a\u5929'), 'Document title did not change language');
        await page.screenshot({path:new URL(`${engine}-settings-${theme}-${language}.png`,output).pathname});
        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Translated settings overflow');
       }
