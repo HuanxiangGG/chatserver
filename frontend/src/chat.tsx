@@ -220,7 +220,7 @@ export function ChatPage() {
   }, [sync, id, load]);
   useEffect(() => {
     const updated = conversations.find((c) => c.id === id);
-    if (updated) setConversation(old => ({ ...updated, canWrite: old?.canWrite, mute: old?.mute, unreadAnnouncements: old?.unreadAnnouncements }));
+    if (updated) setConversation(old => ({ ...updated, canWrite: old?.canWrite, mute: old?.mute, channelRestriction: old?.channelRestriction, permissions: old?.permissions, unreadAnnouncements: old?.unreadAnnouncements }));
   }, [conversations, id]);
   useEffect(() => {
     if (!id) return;
@@ -231,10 +231,11 @@ export function ChatPage() {
     };
     const changed = (data: { id: string }) => { if (data.id === id) void reloadPermission(); };
     socket?.on('conversation:updated', changed);
-    const until = conversation?.mute?.until;
+    const dates = [conversation?.mute?.until, conversation?.channelRestriction?.until].filter((v): v is string => !!v && new Date(v).getTime() > Date.now());
+    const until = dates.sort((a,b)=>Date.parse(a)-Date.parse(b))[0];
     const timer = until ? setTimeout(() => void reloadPermission(), Math.min(2147483647, Math.max(0, new Date(until).getTime() - Date.now()) + 100)) : undefined;
     return () => { stopped = true; socket?.off('conversation:updated', changed); if (timer) clearTimeout(timer); };
-  }, [id, socket, conversation?.mute?.until]);
+  }, [id, socket, conversation?.mute?.until, conversation?.channelRestriction?.until]);
   useEffect(() => {
     if (!socket || !id) return;
     const onMessage = (message: Message) => {
@@ -733,6 +734,8 @@ export function ChatPage() {
               {selectedTyping.join("、")} {tr('screen459')}</>
           )}
         </div>
+        {conversation.channelRestriction && <p className="channel-readonly-note" role="status">{tr('controlsRestrictedUntil',{reason:conversation.channelRestriction.reason||tr('controlsNoReason'),until:conversation.channelRestriction.until?new Date(conversation.channelRestriction.until).toLocaleString(getLanguage()):tr('controlsPermanent')})}</p>}
+        {isChannel && !writable && !conversation.channelRestriction && <p className="channel-readonly-note">{tr('communityReadOnly')}</p>}
         {isChannel && <ChannelCommands conversation={conversation} draft={draft} clear={()=>updateDraft('')} />}
         <form className="composer-wrap" onSubmit={send}
           onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }}
@@ -1013,16 +1016,10 @@ function MessageRow({
     );
   return (
     <article className={`message-row ${own ? "own" : ""} ${grouped ? "grouped" : ""}`} aria-label={m.sender?.displayName || tr('genericUser')}>
-      {!grouped && <Link
-        className="message-avatar"
-        to={`/profile/${m.senderId}`}
-        aria-label={tr('screen501', {v0: m.sender?.displayName || tr('genericUser')})}
-      >
-        <Avatar user={m.sender} size="sm" />
-      </Link>}
+      {!grouped && (m.sender?.role==='GUEST' ? <span className="message-avatar"><Avatar user={m.sender} size="sm" /></span> : <Link className="message-avatar" to={`/profile/${m.senderId}`} aria-label={tr('screen501', {v0:m.sender?.displayName||tr('genericUser')})}><Avatar user={m.sender} size="sm" /></Link>)}
       <div className="message-column">
         {!grouped && <div className="message-meta">
-          <strong>{own ? tr('screen499') : m.sender?.displayName || tr('screen281')}</strong>{m.sender?.role==='BOT'&&<span className="bot-marker">{tr('communityBotBadge')}</span>}
+          <strong>{own ? tr('screen499') : m.sender?.displayName || tr('screen281')}</strong>{m.sender?.role==='GUEST'&&<span className="bot-marker">{tr('controlsGuestBadge')}</span>}{m.sender?.role==='BOT'&&<span className="bot-marker">{tr('communityBotBadge')}</span>}
           <time dateTime={m.createdAt} title={preciseTime} tabIndex={0}>{formatTime(m.createdAt)}</time>
         </div>}
         {grouped && <time className="message-exact-time" dateTime={m.createdAt} title={preciseTime} aria-label={preciseTime} tabIndex={0}>{formatTime(m.createdAt)}</time>}

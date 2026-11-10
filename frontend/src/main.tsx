@@ -1,3 +1,5 @@
+import './guest-tickets.css';
+import { GuestTickets } from './guest-tickets';
 import { translate as tr, useLanguage } from './i18n';
 import { useVisualViewport } from './viewport';
 import { NotificationRuntime } from './notification-ui';
@@ -49,6 +51,8 @@ function App() {
       <AppProvider>
         <SoundRuntime /><NotificationRuntime />
         <Routes>
+          <Route path="/guest/:serverId" element={<GuestTickets/>} />
+          <Route path="/guest/:serverId/tickets/:ticketId" element={<GuestTickets/>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/login" element={<AuthPage key="login" mode="login" />} />
           <Route path="/register" element={<AuthPage key="register" mode="register" />} />

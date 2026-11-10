@@ -57,6 +57,7 @@ export interface Conversation {
   type: "DIRECT" | "GROUP" | "CHANNEL" | "TICKET";
   channel?: { id: string; serverId: string; readOnly: boolean; isPrivate: boolean } | null;
   ticket?: { id:string; serverId:string; status:string; memberId:string; assigneeId:string|null } | null;
+  channelRestriction?: { reason: string; until: string | null } | null;
   canWrite?: boolean;
   canUpload?: boolean;
   permissions?:Partial<CommunityPermissions>|null;
@@ -100,6 +101,7 @@ export type CommunityPermissions = Record<'view'|'send'|'upload'|'manageMessages
 export interface CommunityRole {id:string;name:string;position:number;permissions:Partial<CommunityPermissions>;members:{userId:string}[]}
 export interface Community {
   id: string; name: string; description: string; ownerId: string; role: ServerRole;
+  privateTicketsEnabled: boolean; guestTicketsEnabled: boolean;
   rules?:string; iconUrl?:string|null;
   _count?: { members: number };
 }

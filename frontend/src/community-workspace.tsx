@@ -1,44 +1,793 @@
-import { CommunityDialog } from './communities';
-import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, json } from './api';
-import { translate as tr, useLanguage } from './i18n';
-import { useApp } from './state';
-import { Dialog, Empty, ErrorBox, Spinner } from './ui';
-import { ChatPage } from './chat';
-import type { CommunityDetail, User } from './types';
-export interface Ticket { id:string; number:number; serverId:string; conversationId:string; subject:string; category:string; status:'OPEN'|'IN_PROGRESS'|'CLOSED'; memberId:string; assigneeId:string|null; member?:User; assignee?:User|null; unreadCount?:number; createdAt:string; }
-export const ticketPath=(t:Ticket)=>`/servers/${t.serverId}/tickets/${t.id}/chat/${t.conversationId}`;
-const statusText=(s:Ticket['status'])=>tr(s==='OPEN'?'communityTicketOpen':s==='CLOSED'?'communityTicketClosed':'communityTicketProgress');
-export function TicketCreate({serverId,memberId,onClose}:{serverId:string;memberId?:string;onClose:()=>void}) {
- useLanguage();const app=useApp(),navigate=useNavigate(),[busy,setBusy]=useState(false),[error,setError]=useState(''),nonce=useRef(crypto.randomUUID()),[community,setCommunity]=useState<CommunityDetail|null>(null);
- useEffect(()=>{let live=true;api<CommunityDetail>(`/servers/${serverId}`).then(v=>{if(live)setCommunity(v);}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[serverId]);
- return <Dialog title={tr(memberId||community?.ownerId===app.user?.id?'communityStartTicket':'communityContactOwner')} onClose={onClose}><form className="form-stack" onSubmit={async e=>{e.preventDefault();if(busy)return;setBusy(true);setError('');const form=new FormData(e.currentTarget);try{const ticket=await api<Ticket>(`/servers/${serverId}/tickets`,json('POST',{memberId:memberId||(form.get('memberId')||undefined),clientId:nonce.current,category:form.get('category'),subject:form.get('subject'),content:form.get('content')}));await app.refresh();navigate(ticketPath(ticket));onClose();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}}>
- <p className="muted">{tr('communityTicketPrivacy')}</p>{community&&community.ownerId===app.user?.id&&!memberId&&<label>{tr('communityMembers')}<select name="memberId" required><option value="">{tr('communityMembers')}</option>{community.members.filter(m=>m.userId!==community.ownerId).map(m=><option key={m.userId} value={m.userId}>{m.user.displayName}</option>)}</select></label>}<label>{tr('communityTicketCategory')}<select name="category"><option value="GENERAL">{tr('communityGeneral')}</option><option value="SUPPORT">{tr('communitySupport')}</option><option value="SAFETY">{tr('communitySafety')}</option></select></label>
- <label>{tr('communitySubject')}<input name="subject" required maxLength={120} autoFocus /></label><label>{tr('communityFirstMessage')}<textarea name="content" required maxLength={4000} rows={4}/></label>{error&&<p role="alert" className="form-error">{error}</p>}<button className="btn btn-primary" disabled={busy}>{tr(busy?'communitySubmitting':'communityCreateTicket')}</button></form></Dialog>;
+import { CopyTicketId } from "./community-controls";
+import { CommunityDialog } from "./communities";
+import { useEffect, useRef, useState } from "react";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
+import { api, json } from "./api";
+import { translate as tr, useLanguage } from "./i18n";
+import { useApp } from "./state";
+import { Dialog, Empty, ErrorBox, Spinner } from "./ui";
+import { ChatPage } from "./chat";
+import type { CommunityDetail, User } from "./types";
+export interface Ticket {
+  id: string;
+  number: number;
+  serverId: string;
+  conversationId: string;
+  subject: string;
+  category: string;
+  status: "OPEN" | "IN_PROGRESS" | "CLOSED";
+  memberId: string | null;
+  guestName?: string | null;
+  assigneeId: string | null;
+  member?: User;
+  assignee?: User | null;
+  unreadCount?: number;
+  createdAt: string;
 }
-export function TicketsPage(){
- useLanguage();const {serverId}=useParams(),app=useApp(),[tickets,setTickets]=useState<Ticket[]|null>(null),[error,setError]=useState(''),[query,setQuery]=useState(''),[status,setStatus]=useState(''),[creating,setCreating]=useState(false),[retry,setRetry]=useState(0),[cursor,setCursor]=useState<string|null>(null),[paging,setPaging]=useState(false);
- useEffect(()=>{let live=true;setTickets(null);const timer=setTimeout(()=>{api<{tickets:Ticket[];cursor:string|null}>(`/servers/${serverId}/tickets?q=${encodeURIComponent(query)}${status?`&status=${status}`:''}`).then(v=>{if(live){setTickets(v.tickets);setCursor(v.cursor);setError('');}}).catch(e=>{if(live)setError(e.message);});},200);return()=>{live=false;clearTimeout(timer);};},[serverId,app.sync,app.conversations,query,status,retry]);
- return <section className="community-panel ticket-queue"><header><Link className="back-link" to={`/servers/${serverId}`}>{tr('communityBackChannels')}</Link><h1>{tr(app.communities.find(s=>s.id===serverId)?.ownerId===app.user?.id?'communityTicketQueue':'communityTickets')}</h1><button className="btn btn-primary" onClick={()=>setCreating(true)}>{tr(app.communities.find(s=>s.id===serverId)?.ownerId===app.user?.id?'communityStartTicket':'communityContactOwner')}</button></header><p className="muted">{tr('communityTicketPrivacy')}</p><div className="community-filters"><label>{tr('communityFindTicket')}<input value={query} maxLength={100} onChange={e=>setQuery(e.target.value)}/></label><label>{tr('communityStatus')}<select value={status} onChange={e=>setStatus(e.target.value)}><option value="">{tr('communityAll')}</option>{(['OPEN','IN_PROGRESS','CLOSED'] as const).map(s=><option key={s} value={s}>{statusText(s)}</option>)}</select></label></div>
- {error?<ErrorBox message={error} retry={()=>setRetry(v=>v+1)}/>:!tickets?<Spinner/>:!tickets.length?<Empty title={tr('communityNoTickets')} description={tr('communityTicketEmpty')}/>:<div className="ticket-list">{tickets.map(t=><Link key={t.id} to={ticketPath(t)} className="ticket-row"><span><strong>#{t.number} · {t.subject}</strong><small>{t.member?.displayName} · {statusText(t.status)}</small></span><span>{t.assignee?.displayName||tr('communityUnassigned')}{!!t.unreadCount&&<b className="unread-count">{t.unreadCount}</b>}</span></Link>)}</div>}{cursor&&<button className="btn btn-secondary" disabled={paging} onClick={async()=>{setPaging(true);try{const next=await api<{tickets:Ticket[];cursor:string|null}>(`/servers/${serverId}/tickets?cursor=${cursor}&q=${encodeURIComponent(query)}${status?`&status=${status}`:''}`);setTickets(v=>[...(v||[]),...next.tickets]);setCursor(next.cursor);}catch(e){setError((e as Error).message);}finally{setPaging(false);}}}>{tr('communityMoreTickets')}</button>}{creating&&<TicketCreate serverId={serverId!} onClose={()=>setCreating(false)}/>}</section>;
+export const ticketPath = (t: Ticket) =>
+  `/servers/${t.serverId}/tickets/${t.id}/chat/${t.conversationId}`;
+const statusText = (s: Ticket["status"]) =>
+  tr(
+    s === "OPEN"
+      ? "communityTicketOpen"
+      : s === "CLOSED"
+        ? "communityTicketClosed"
+        : "communityTicketProgress",
+  );
+export function TicketCreate({
+  serverId,
+  memberId,
+  onClose,
+}: {
+  serverId: string;
+  memberId?: string;
+  onClose: () => void;
+}) {
+  useLanguage();
+  const app = useApp(),
+    navigate = useNavigate(),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    nonce = useRef(crypto.randomUUID()),
+    [community, setCommunity] = useState<CommunityDetail | null>(null);
+  useEffect(() => {
+    let live = true;
+    api<CommunityDetail>(`/servers/${serverId}`)
+      .then((v) => {
+        if (live) setCommunity(v);
+      })
+      .catch((e) => {
+        if (live) setError(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [serverId]);
+  return (
+    <Dialog
+      title={tr(
+        memberId || community?.ownerId === app.user?.id
+          ? "communityStartTicket"
+          : "communityContactOwner",
+      )}
+      onClose={onClose}
+    >
+      <form
+        className="form-stack"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (busy) return;
+          setBusy(true);
+          setError("");
+          const form = new FormData(e.currentTarget);
+          try {
+            const ticket = await api<Ticket>(
+              `/servers/${serverId}/tickets`,
+              json("POST", {
+                memberId: memberId || form.get("memberId") || undefined,
+                clientId: nonce.current,
+                category: form.get("category"),
+                subject: form.get("subject"),
+                content: form.get("content"),
+              }),
+            );
+            await app.refresh();
+            navigate(ticketPath(ticket));
+            onClose();
+          } catch (e) {
+            setError((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <p className="muted">{tr("communityTicketPrivacy")}</p>
+        {community && community.ownerId === app.user?.id && !memberId && (
+          <label>
+            {tr("communityMembers")}
+            <select name="memberId" required>
+              <option value="">{tr("communityMembers")}</option>
+              {community.members
+                .filter((m) => m.userId !== community.ownerId)
+                .map((m) => (
+                  <option key={m.userId} value={m.userId}>
+                    {m.user.displayName}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+        <label>
+          {tr("communityTicketCategory")}
+          <select name="category">
+            <option value="GENERAL">{tr("communityGeneral")}</option>
+            <option value="SUPPORT">{tr("communitySupport")}</option>
+            <option value="SAFETY">{tr("communitySafety")}</option>
+          </select>
+        </label>
+        <label>
+          {tr("communitySubject")}
+          <input name="subject" required maxLength={120} autoFocus />
+        </label>
+        <label>
+          {tr("communityFirstMessage")}
+          <textarea name="content" required maxLength={4000} rows={4} />
+        </label>
+        {error && (
+          <p role="alert" className="form-error">
+            {error}
+          </p>
+        )}
+        <button className="btn btn-primary" disabled={busy}>
+          {tr(busy ? "communitySubmitting" : "communityCreateTicket")}
+        </button>
+      </form>
+    </Dialog>
+  );
 }
-export function TicketChat(){
- useLanguage();const {serverId,ticketId,id}=useParams(),navigate=useNavigate(),app=useApp(),[ticket,setTicket]=useState<Ticket|null>(null),[server,setServer]=useState<CommunityDetail|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[revision,setRevision]=useState(0);
- useEffect(()=>{let live=true;Promise.all([api<Ticket>(`/tickets/${ticketId}`),api<CommunityDetail>(`/servers/${serverId}`)]).then(([t,s])=>{if(live){if(t.serverId!==serverId||t.conversationId!==id){navigate(ticketPath(t),{replace:true});return;}setTicket(t);setServer(s);setError('');}}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[ticketId,serverId,id,app.sync,revision]);
- const change=async(data:unknown)=>{setBusy(true);try{setTicket(await api<Ticket>(`/tickets/${ticketId}`,json('PATCH',data)));setRevision(v=>v+1);await app.refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
- if(!ticket||!server)return error?<ErrorBox message={error} retry={()=>{setError('');setRevision(v=>v+1);}}/>:<Spinner/>;
- return <div className="ticket-chat"><div className="ticket-context"><Link to={`/servers/${serverId}/tickets`}>{tr(server.ownerId===app.user?.id?'communityTicketQueue':'communityTickets')}</Link><strong title={ticket.subject}>#{ticket.number} · {ticket.subject}</strong><span>{statusText(ticket.status)} · {tr('communityHandler')}: {ticket.assignee?.displayName||tr('communityOwner')}</span>
- <div>{server.ownerId===app.user?.id&&<label className="ticket-assign"><span className="sr-only">{tr('communityAssign')}</span><select value={ticket.assigneeId||''} disabled={busy} onChange={e=>void change({assigneeId:e.target.value||null})}><option value="">{tr('communityOwner')}</option>{server.members.filter(m=>m.userId!==ticket.memberId&&m.userId!==server.ownerId&&m.ticketEligible).map(m=><option key={m.userId} value={m.userId}>{m.user.displayName}</option>)}</select></label>}{ticket.status==='OPEN'&&(server.ownerId===app.user?.id||ticket.assigneeId===app.user?.id)&&<button className="btn btn-secondary" disabled={busy} onClick={()=>void change({status:'IN_PROGRESS'})}>{tr('communityTakeTicket')}</button>}<button className="btn btn-secondary" disabled={busy} onClick={()=>void change({status:ticket.status==='CLOSED'?'OPEN':'CLOSED'})}>{tr(ticket.status==='CLOSED'?'communityReopen':'communityCloseTicket')}</button></div></div>{error&&<p role="alert" className="form-error ticket-action-error">{error}</p>}<ChatPage/></div>;
+export function TicketsPage() {
+  useLanguage();
+  const { serverId } = useParams(),
+    [params] = useSearchParams(),
+    assigned = params.get("assigned") === "1",
+    app = useApp(),
+    [tickets, setTickets] = useState<Ticket[] | null>(null),
+    [error, setError] = useState(""),
+    [query, setQuery] = useState(""),
+    [status, setStatus] = useState(""),
+    [creating, setCreating] = useState(false),
+    [retry, setRetry] = useState(0),
+    [cursor, setCursor] = useState<string | null>(null),
+    [paging, setPaging] = useState(false),
+    [community, setCommunity] = useState<CommunityDetail | null>(null);
+  useEffect(() => {
+    let live = true;
+    api<CommunityDetail>(`/servers/${serverId}`)
+      .then((v) => {
+        if (live) setCommunity(v);
+      })
+      .catch((e) => {
+        if (live) setError(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [serverId, app.sync]);
+  useEffect(() => {
+    setTickets(null);
+  }, [serverId, query, status, assigned]);
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(() => {
+      api<{ tickets: Ticket[]; cursor: string | null }>(
+        `/servers/${serverId}/tickets?assigned=${assigned ? 1 : 0}&q=${encodeURIComponent(query)}${status ? `&status=${status}` : ""}`,
+      )
+        .then((v) => {
+          if (live) {
+            setTickets(v.tickets);
+            setCursor(v.cursor);
+            setError("");
+          }
+        })
+        .catch((e) => {
+          if (live) setError(e.message);
+        });
+    }, 200);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [serverId, app.sync, app.conversations, query, status, retry, assigned]);
+  return (
+    <section className="community-panel ticket-queue">
+      <Link className="back-link" to={`/servers/${serverId}`}>
+        {tr("communityBackChannels")}
+      </Link>
+      <header>
+        <h1>
+          {tr(
+            app.communities.find((s) => s.id === serverId)?.ownerId ===
+              app.user?.id
+              ? "communityTicketQueue"
+              : assigned
+                ? "controlsAssignedToMe"
+                : "communityTickets",
+          )}
+        </h1>
+        {community?.privateTicketsEnabled && (
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            {tr("controlsNewTicket")}
+          </button>
+        )}
+      </header>
+      {community && !community.privateTicketsEnabled && (
+        <p className="field-note">{tr("controlsExistingKept")}</p>
+      )}
+      <details
+        className="ticket-filters"
+        open={typeof window !== "undefined" && window.innerWidth >= 640}
+      >
+        <summary>{tr("controlsFilterTickets")}</summary>
+        <div className="community-filters">
+          <label>
+            {tr("communityFindTicket")}
+            <input
+              value={query}
+              maxLength={100}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <label>
+            {tr("communityStatus")}
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">{tr("communityAll")}</option>
+              {(["OPEN", "IN_PROGRESS", "CLOSED"] as const).map((s) => (
+                <option key={s} value={s}>
+                  {statusText(s)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </details>
+
+      {error ? (
+        <ErrorBox message={error} retry={() => setRetry((v) => v + 1)} />
+      ) : !tickets ? (
+        <Spinner />
+      ) : !tickets.length ? (
+        <Empty
+          title={tr("communityNoTickets")}
+          description={tr("communityTicketEmpty")}
+        />
+      ) : (
+        <div className="ticket-list">
+          {tickets.map((t) => (
+            <Link key={t.id} to={ticketPath(t)} className="ticket-row">
+              <span>
+                <strong>
+                  #{t.number} · {t.subject}
+                </strong>
+                <small>
+                  {t.member?.displayName || t.guestName} ·{" "}
+                  {statusText(t.status)}
+                </small>
+              </span>
+              <span>
+                {t.assignee?.displayName || tr("communityUnassigned")}
+                {!!t.unreadCount && (
+                  <b className="unread-count">{t.unreadCount}</b>
+                )}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+      {cursor && (
+        <button
+          className="btn btn-secondary"
+          disabled={paging}
+          onClick={async () => {
+            setPaging(true);
+            try {
+              const next = await api<{
+                tickets: Ticket[];
+                cursor: string | null;
+              }>(
+                `/servers/${serverId}/tickets?assigned=${assigned ? 1 : 0}&cursor=${cursor}&q=${encodeURIComponent(query)}${status ? `&status=${status}` : ""}`,
+              );
+              setTickets((v) => [...(v || []), ...next.tickets]);
+              setCursor(next.cursor);
+            } catch (e) {
+              setError((e as Error).message);
+            } finally {
+              setPaging(false);
+            }
+          }}
+        >
+          {tr("communityMoreTickets")}
+        </button>
+      )}
+      {creating && (
+        <TicketCreate serverId={serverId!} onClose={() => setCreating(false)} />
+      )}
+    </section>
+  );
 }
-interface BotInstall {id:string;botId:string;enabled:boolean;bot:{id:string;name:string;builtin?:boolean};channelIds?:string[];channels?:{channelId:string}[];config?:{welcome?:string;commands?:string[]};permissions:string[];}
-export function CommunityBots({server}:{server:CommunityDetail}){
- useLanguage();const [installed,setInstalled]=useState<BotInstall[]>([]),[catalog,setCatalog]=useState<{id:string;name:string;builtin?:boolean}[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[selected,setSelected]=useState<string[]>([]),[editing,setEditing]=useState<BotInstall|null>(null),[revision,setRevision]=useState(0),[ready,setReady]=useState(false),[granted,setGranted]=useState(['SEND_MESSAGES','COMMANDS']);
- useEffect(()=>{let live=true;Promise.all([api<BotInstall[]>(`/servers/${server.id}/bots`),api<{id:string;name:string;builtin?:boolean}[]>('/bots/catalog')]).then(([i,c])=>{if(live){setInstalled(i);setCatalog(c);setReady(true);setError('');}}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[server.id,revision]);
- const mutate=async(path:string,method:string,data?:unknown)=>{setBusy(true);setError('');try{await api(path,json(method,data));setRevision(v=>v+1);setEditing(null);setSelected([]);}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
- return <section className="community-setting-section"><h2>{tr('communityBots')}</h2><p className="muted">{tr('communityBotScopes')}</p>{error&&<p role="alert" className="form-error">{error}</p>}{!ready&&!error?<Spinner/>:<>{!installed.length&&<p>{tr('communityNoBots')}</p>}{installed.map(i=><div className="community-bot-row" key={i.id}><strong>{i.bot.name}<small>{tr(i.enabled?'communityEnabled':'communityDisabled')}</small></strong><button className="btn btn-secondary" disabled={busy} onClick={()=>{setEditing(i);setGranted(i.permissions);setSelected(i.channelIds||i.channels?.map(c=>c.channelId)||[]);}}>{tr('communityConfigure')}</button><button className="btn btn-secondary" disabled={busy} onClick={()=>void mutate(`/servers/${server.id}/bots/${i.id}`,'PATCH',{enabled:!i.enabled})}>{tr(i.enabled?'communityDisable':'communityEnable')}</button><button className="btn btn-danger" disabled={busy} onClick={()=>void mutate(`/servers/${server.id}/bots/${i.id}`,'DELETE')}>{tr('communityRemove')}</button></div>)}
- <form className="form-stack" key={editing?.id||'install'} onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void mutate(`/servers/${server.id}/bots${editing?`/${editing.id}`:''}`,editing?'PATCH':'POST',{...(!editing?{botId:f.get('botId')}:{ }),channelIds:selected,permissions:granted,config:{welcome:f.get('welcome'),commands:String(f.get('commands')||'').split(',').map(v=>v.trim()).filter(Boolean)}});}}><h3>{tr(editing?'communityConfigure':'communityInstallBot')}</h3>{!editing&&<><label>{tr('communityCatalog')}<select name="catalog" onChange={e=>{const field=e.currentTarget.form!.elements.namedItem('botId') as HTMLInputElement;field.value=e.target.value;}}><option value="">{tr('communityCustomBot')}</option>{catalog.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><label>{tr('communityBotIdentity')}<input name="botId" required defaultValue={catalog[0]?.id} /></label></>}
- <fieldset><legend>{tr('communityAllowedChannels')}</legend>{server.channels.filter(c=>!c.archivedAt).map(c=><label className="check-label" key={c.id}><input type="checkbox" checked={selected.includes(c.id)} onChange={e=>setSelected(v=>e.target.checked?[...v,c.id]:v.filter(id=>id!==c.id))}/>{c.conversation.name}</label>)}</fieldset><fieldset><legend>{tr('communityRequestedBotPermissions')}</legend>{(['SEND_MESSAGES','READ_MESSAGES','COMMANDS'] as const).map(p=><label className="check-label" key={p}><input type="checkbox" checked={granted.includes(p)} onChange={e=>setGranted(v=>e.target.checked?[...v,p]:v.filter(k=>k!==p))}/>{tr(p==='SEND_MESSAGES'?'communityBotSend':p==='READ_MESSAGES'?'communityBotRead':'communityBotCommands')}</label>)}</fieldset><label>{tr('communityCustomCommands')}<input name="commands" pattern="[a-z0-9_, -]*" defaultValue={editing?.config?.commands?.join(',')||'ping'} /></label><label>{tr('communityWelcomeText')}<textarea name="welcome" maxLength={1000} defaultValue={editing?.config?.welcome||tr('communityDefaultWelcome')}/></label><button className="btn btn-primary" disabled={busy||!selected.length}>{tr(busy?'communitySubmitting':editing?'communitySave':'communityInstallBot')}</button>{editing&&<button className="btn btn-secondary" type="button" onClick={()=>{setEditing(null);setSelected([]);}}>{tr('communityCancel')}</button>}</form></>}
- </section>;
+export function TicketChat() {
+  useLanguage();
+  const { serverId, ticketId, id } = useParams(),
+    navigate = useNavigate(),
+    app = useApp(),
+    [ticket, setTicket] = useState<Ticket | null>(null),
+    [server, setServer] = useState<CommunityDetail | null>(null),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let live = true;
+    Promise.all([
+      api<Ticket>(`/tickets/${ticketId}`),
+      api<CommunityDetail>(`/servers/${serverId}`),
+    ])
+      .then(([t, s]) => {
+        if (live) {
+          if (t.serverId !== serverId || t.conversationId !== id) {
+            navigate(ticketPath(t), { replace: true });
+            return;
+          }
+          setTicket(t);
+          setServer(s);
+          setError("");
+        }
+      })
+      .catch((e) => {
+        if (live) setError(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [ticketId, serverId, id, app.sync, revision]);
+  const change = async (data: unknown) => {
+    setBusy(true);
+    try {
+      setTicket(await api<Ticket>(`/tickets/${ticketId}`, json("PATCH", data)));
+      setRevision((v) => v + 1);
+      await app.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!ticket || !server || ticket.id !== ticketId || server.id !== serverId)
+    return error ? (
+      <ErrorBox
+        message={error}
+        retry={() => {
+          setError("");
+          setRevision((v) => v + 1);
+        }}
+      />
+    ) : (
+      <Spinner />
+    );
+  return (
+    <div className="ticket-chat" key={ticket.id}>
+      <div className="ticket-context">
+        <CopyTicketId id={ticket.id} />
+        <Link to={`/servers/${serverId}/tickets`}>
+          {tr(
+            server.ownerId === app.user?.id
+              ? "communityTicketQueue"
+              : "communityTickets",
+          )}
+        </Link>
+        <strong title={ticket.subject}>
+          #{ticket.number} · {ticket.subject}
+        </strong>
+        <span>
+          {statusText(ticket.status)} · {tr("communityHandler")}:{" "}
+          {ticket.assignee?.displayName || tr("communityOwner")}
+        </span>
+        <div>
+          {server.ownerId === app.user?.id && (
+            <label className="ticket-assign">
+              <span className="sr-only">{tr("communityAssign")}</span>
+              <select
+                value={ticket.assigneeId || ""}
+                disabled={busy}
+                onChange={(e) =>
+                  void change({ assigneeId: e.target.value || null })
+                }
+              >
+                <option value="">{tr("communityOwner")}</option>
+                {server.members
+                  .filter(
+                    (m) =>
+                      m.userId !== ticket.memberId &&
+                      m.userId !== server.ownerId &&
+                      m.ticketEligible,
+                  )
+                  .map((m) => (
+                    <option key={m.userId} value={m.userId}>
+                      {m.user.displayName}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+          {ticket.status === "OPEN" &&
+            (server.ownerId === app.user?.id ||
+              ticket.assigneeId === app.user?.id) && (
+              <button
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={() => void change({ status: "IN_PROGRESS" })}
+              >
+                {tr("communityTakeTicket")}
+              </button>
+            )}
+          <button
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={() =>
+              void change({
+                status: ticket.status === "CLOSED" ? "OPEN" : "CLOSED",
+              })
+            }
+          >
+            {tr(
+              ticket.status === "CLOSED"
+                ? "communityReopen"
+                : "communityCloseTicket",
+            )}
+          </button>
+        </div>
+      </div>
+      {error && (
+        <p role="alert" className="form-error ticket-action-error">
+          {error}
+        </p>
+      )}
+      <ChatPage />
+    </div>
+  );
 }
-export function CommunityIndex(){useLanguage();const app=useApp(),navigate=useNavigate(),[dialog,setDialog]=useState<'create'|'join'|null>(null);return <section className="community-panel"><h1>{tr('communityCommunities')}</h1><div className="community-quick-actions"><button className="btn btn-primary" onClick={()=>setDialog('create')}>{tr('screen581')}</button><button className="btn btn-secondary" onClick={()=>setDialog('join')}>{tr('screen580')}</button></div>{dialog&&<CommunityDialog join={dialog==='join'} onClose={()=>setDialog(null)}/ >}{!app.communities.length?<Empty title={tr('communityNoCommunities')} description={tr('communityChooseCommunity')}/>:<div className="ticket-list">{app.communities.map(s=><button className="ticket-row" key={s.id} onClick={()=>navigate(`/servers/${s.id}`)}><span>{s.name}</span><small>{s._count?.members} · {tr('communityMembers')}</small></button>)}</div>}<Link to="/chat">{tr('communityPrivateChats')}</Link></section>;}
+interface BotInstall {
+  id: string;
+  botId: string;
+  enabled: boolean;
+  bot: { id: string; name: string; builtin?: boolean };
+  channelIds?: string[];
+  channels?: { channelId: string }[];
+  config?: { welcome?: string; commands?: string[] };
+  permissions: string[];
+}
+export function CommunityBots({ server }: { server: CommunityDetail }) {
+  useLanguage();
+  const [installed, setInstalled] = useState<BotInstall[]>([]),
+    [catalog, setCatalog] = useState<
+      { id: string; name: string; builtin?: boolean }[]
+    >([]),
+    [botId, setBotId] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    inFlight = useRef(false),
+    [selected, setSelected] = useState<string[]>([]),
+    [editing, setEditing] = useState<BotInstall | null>(null),
+    [revision, setRevision] = useState(0),
+    [ready, setReady] = useState(false),
+    [granted, setGranted] = useState(["SEND_MESSAGES", "COMMANDS"]);
+  useEffect(() => {
+    let live = true;
+    Promise.all([
+      api<BotInstall[]>(`/servers/${server.id}/bots`),
+      api<{ id: string; name: string; builtin?: boolean }[]>("/bots/catalog"),
+    ])
+      .then(([i, c]) => {
+        if (live) {
+          setInstalled(i);
+          setCatalog(c);
+          setReady(true);
+          setError("");
+        }
+      })
+      .catch((e) => {
+        if (live) setError(e.message);
+      });
+    return () => {
+      live = false;
+    };
+  }, [server.id, revision]);
+  const mutate = async (path: string, method: string, data?: unknown) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await api(path, json(method, data));
+      setRevision((v) => v + 1);
+      setEditing(null);
+      setSelected([]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="community-setting-section" id="community-bots">
+      <h2>{tr("communityBots")}</h2>
+      <p className="muted">{tr("communityBotScopes")}</p>
+      {error && (
+        <p role="alert" className="form-error">
+          {error}
+        </p>
+      )}
+      {!ready ? (
+        <>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setRevision((v) => v + 1)}
+          >
+            {tr("retry")}
+          </button>
+          {!error && <Spinner />}
+        </>
+      ) : (
+        <>
+          {!installed.length && <p>{tr("communityNoBots")}</p>}
+          {installed.map((i) => (
+            <div className="community-bot-row" key={i.id}>
+              <strong>
+                {i.bot.builtin ? tr("controlsWelcomeBot") : i.bot.name}
+                <small>
+                  {tr(i.enabled ? "communityEnabled" : "communityDisabled")}
+                </small>
+              </strong>
+              <button
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={() => {
+                  setEditing(i);
+                  setGranted(i.permissions);
+                  setSelected(i.channelIds || []);
+                }}
+              >
+                {tr("communityConfigure")}
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={() =>
+                  void mutate(`/servers/${server.id}/bots/${i.id}`, "PATCH", {
+                    enabled: !i.enabled,
+                  })
+                }
+              >
+                {tr(i.enabled ? "communityDisable" : "communityEnable")}
+              </button>
+              <button
+                className="btn btn-danger"
+                disabled={busy}
+                onClick={() =>
+                  void mutate(`/servers/${server.id}/bots/${i.id}`, "DELETE")
+                }
+              >
+                {tr("communityRemove")}
+              </button>
+            </div>
+          ))}
+          <form
+            className="form-stack"
+            key={editing?.id || "install"}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!selected.length) {
+                setError(tr("controlsChooseChannels"));
+                return;
+              }
+              if (!editing && !botId) {
+                setError(tr("controlsChooseBot"));
+                return;
+              }
+              const f = new FormData(e.currentTarget);
+              void mutate(
+                `/servers/${server.id}/bots${editing ? `/${editing.id}` : ""}`,
+                editing ? "PATCH" : "POST",
+                {
+                  ...(!editing ? { botId } : {}),
+                  channelIds: selected,
+                  permissions: granted,
+                  config: {
+                    welcome: f.get("welcome"),
+                    commands: String(f.get("commands") || "")
+                      .split(",")
+                      .map((v) => v.trim())
+                      .filter(Boolean),
+                  },
+                },
+              );
+            }}
+          >
+            <h3>
+              {tr(editing ? "communityConfigure" : "communityInstallBot")}
+            </h3>
+            {!editing && (
+              <>
+                <label>
+                  {tr("communityCatalog")}
+                  <select
+                    name="catalog"
+                    value={catalog.some((b) => b.id === botId) ? botId : ""}
+                    onChange={(e) => setBotId(e.target.value)}
+                  >
+                    <option value="">{tr("controlsChooseBot")}</option>
+                    {catalog.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.builtin ? tr("controlsWelcomeBot") : b.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  {tr("communityBotIdentity")}
+                  <input
+                    name="botId"
+                    required
+                    value={botId}
+                    onChange={(e) => setBotId(e.target.value.trim())}
+                  />
+                </label>
+              </>
+            )}
+            <fieldset>
+              <legend>{tr("communityAllowedChannels")}</legend>
+              {server.channels
+                .filter((c) => !c.archivedAt)
+                .map((c) => (
+                  <label className="check-label" key={c.id}>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(c.id)}
+                      onChange={(e) =>
+                        setSelected((v) =>
+                          e.target.checked
+                            ? [...v, c.id]
+                            : v.filter((id) => id !== c.id),
+                        )
+                      }
+                    />
+                    {c.conversation.name}
+                  </label>
+                ))}
+            </fieldset>
+            {!selected.length && (
+              <p className="field-note">{tr("controlsChooseChannels")}</p>
+            )}
+            <fieldset>
+              <legend>{tr("communityRequestedBotPermissions")}</legend>
+              {(["SEND_MESSAGES", "READ_MESSAGES", "COMMANDS"] as const).map(
+                (p) => (
+                  <label className="check-label" key={p}>
+                    <input
+                      type="checkbox"
+                      checked={granted.includes(p)}
+                      onChange={(e) =>
+                        setGranted((v) =>
+                          e.target.checked
+                            ? [...v, p]
+                            : v.filter((k) => k !== p),
+                        )
+                      }
+                    />
+                    {tr(
+                      p === "SEND_MESSAGES"
+                        ? "communityBotSend"
+                        : p === "READ_MESSAGES"
+                          ? "communityBotRead"
+                          : "communityBotCommands",
+                    )}
+                  </label>
+                ),
+              )}
+            </fieldset>
+            <label>
+              {tr("communityCustomCommands")}
+              <input
+                name="commands"
+                pattern="[a-z0-9_, -]*"
+                defaultValue={editing?.config?.commands?.join(",") || "ping"}
+              />
+            </label>
+            <label>
+              {tr("communityWelcomeText")}
+              <textarea
+                name="welcome"
+                maxLength={1000}
+                defaultValue={
+                  editing?.config?.welcome || tr("communityDefaultWelcome")
+                }
+              />
+            </label>
+            <button className="btn btn-primary" disabled={busy}>
+              {tr(
+                busy
+                  ? "communitySubmitting"
+                  : editing
+                    ? "communitySave"
+                    : "communityInstallBot",
+              )}
+            </button>
+            {editing && (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => {
+                  setEditing(null);
+                  setSelected([]);
+                }}
+              >
+                {tr("communityCancel")}
+              </button>
+            )}
+          </form>
+        </>
+      )}
+    </section>
+  );
+}
+export function CommunityIndex() {
+  useLanguage();
+  const app = useApp(),
+    navigate = useNavigate(),
+    [dialog, setDialog] = useState<"create" | "join" | null>(null);
+  return (
+    <section className="community-panel">
+      <h1>{tr("communityCommunities")}</h1>
+      <div className="community-quick-actions">
+        <button className="btn btn-primary" onClick={() => setDialog("create")}>
+          {tr("screen581")}
+        </button>
+        <button className="btn btn-secondary" onClick={() => setDialog("join")}>
+          {tr("screen580")}
+        </button>
+      </div>
+      {dialog && (
+        <CommunityDialog
+          join={dialog === "join"}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {!app.communities.length ? (
+        <Empty
+          title={tr("communityNoCommunities")}
+          description={tr("communityChooseCommunity")}
+        />
+      ) : (
+        <div className="ticket-list">
+          {app.communities.map((s) => (
+            <button
+              className="ticket-row"
+              key={s.id}
+              onClick={() => navigate(`/servers/${s.id}`)}
+            >
+              <span>{s.name}</span>
+              <small>
+                {s._count?.members} · {tr("communityMembers")}
+              </small>
+            </button>
+          ))}
+        </div>
+      )}
+      <Link to="/chat">{tr("communityPrivateChats")}</Link>
+    </section>
+  );
+}
