@@ -49,6 +49,8 @@ model User {
   ownedServers     Server[]             @relation("ServerOwner")
   channelGrants    ChannelGrant[]
   serverBans       ServerBan[]
+  serverRoles      ServerRoleMember[]
+  botIdentity      Bot?
 }
 
 model Session {
@@ -101,6 +103,7 @@ model Conversation {
   messages    Message[]
   announcements GroupAnnouncement[]
   channel     Channel?
+  ticket      Ticket?
 }
 
 model ConversationMember {
@@ -218,6 +221,8 @@ model Server {
   ownerId     String
   name        String
   description String            @default("")
+  rules       String            @default("")
+  iconUrl     String?
   createdAt   DateTime          @default(now())
   owner       User              @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   members     ServerMember[]
@@ -225,6 +230,9 @@ model Server {
   channels    Channel[]
   invites     ServerInvite[]
   bans        ServerBan[]
+  roles       ServerRole[]
+  tickets     Ticket[]
+  installations BotInstallation[]
 }
 
 model ServerMember {
@@ -275,6 +283,8 @@ model Channel {
   conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Restrict)
   category       ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   grants         ChannelGrant[]
+  permissionOverrides Json?
+  roleOverrides ChannelRoleOverride[]
 
   @@index([serverId, archivedAt, position])
 }
@@ -375,4 +385,96 @@ model Report {
   handler User? @relation("ReportHandler", fields: [handlerId], references: [id], onDelete: SetNull)
   @@index([status, createdAt, id])
   @@index([reporterId, createdAt])
+}
+
+// Community-scoped roles never confer global administrator privileges.
+model ServerRole {
+  id String @id @default(cuid())
+  serverId String
+  name String
+  position Int @default(10)
+  permissions Json
+  createdAt DateTime @default(now())
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  members ServerRoleMember[]
+  channels ChannelRoleOverride[]
+  @@index([serverId, position])
+}
+model ServerRoleMember {
+  roleId String
+  userId String
+  role ServerRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([roleId, userId])
+  @@index([userId])
+}
+model ChannelRoleOverride {
+  channelId String
+  roleId String
+  permissions Json
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  role ServerRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  @@id([channelId, roleId])
+}
+model Ticket {
+  id String @id @default(cuid())
+  number Int @unique @default(autoincrement())
+  serverId String
+  conversationId String @unique
+  memberId String
+  creatorId String
+  assigneeId String?
+  subject String
+  category String
+  status String @default("OPEN")
+  clientId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  server Server @relation(fields: [serverId], references: [id], onDelete: Restrict)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  @@unique([creatorId, clientId])
+  @@index([serverId, status, createdAt])
+  @@index([memberId, createdAt])
+}
+model Bot {
+  id String @id @default(cuid())
+  developerId String
+  userId String @unique
+  name String
+  tokenHash String @unique
+  builtin Boolean @default(false)
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  installations BotInstallation[]
+}
+model BotInstallation {
+  id String @id @default(cuid())
+  botId String
+  serverId String
+  enabled Boolean @default(true)
+  channelIds Json
+  permissions Json
+  config Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  welcomes BotWelcome[]
+  events BotEvent[]
+  @@unique([botId, serverId])
+}
+model BotWelcome {
+  installationId String
+  userId String
+  installation BotInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  @@id([installationId, userId])
+}
+model BotEvent {
+  id String @id @default(cuid())
+  installationId String
+  type String
+  payload Json
+  createdAt DateTime @default(now())
+  installation BotInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  @@index([installationId, createdAt, id])
 }

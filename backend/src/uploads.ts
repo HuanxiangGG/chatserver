@@ -13,7 +13,7 @@ const router = Router(); router.use(requireAuth);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 0, parts: 1 }, preservePath: true });
 const allowed: Record<string, string[]> = { 'image/png': ['.png'], 'image/jpeg': ['.jpg', '.jpeg'], 'image/gif': ['.gif'], 'image/webp': ['.webp'], 'application/pdf': ['.pdf'] };
 router.post('/uploads', asyncRoute(async (req, _res, next) => { await consumeLimit(`upload:${req.user.id}`, 20, 60); const conversationId = validate(z.string().min(1).max(100).optional(), req.query.conversationId);
- if (conversationId) await writable(conversationId, req.user.id);
+ if (conversationId) { await writable(conversationId, req.user.id); const access = await channelPermission(conversationId, req.user.id, true); if (access && !access.permissions.upload) throw new HttpError(403, '此频道不允许上传文件', 'CHANNEL_UPLOAD_FORBIDDEN'); }
  else if (await prisma.groupMute.findFirst({ where: { userId: req.user.id, OR: [{ permanent: true }, { until: { gt: new Date() } }] } })) throw new HttpError(403, '禁言期间上传需要指定可写会话', 'GROUP_MUTED');
  next(); }), upload.single('file'), asyncRoute(async (req, res) => {
   const file = req.file;
@@ -40,9 +40,9 @@ router.get('/uploads/:id', asyncRoute(async (req, res) => {
   const attachment = await prisma.messageAttachment.findUnique({ where: { id }, include: { message: { include: { conversation: { select: { members: { where: { userId: req.user.id }, select: { userId: true } } } } } } } });
   if (!attachment) throw new HttpError(404, '文件不存在');
   const avatarPath = `/api/uploads/${id}`;
-  const isAvatar = attachment.mimeType.startsWith('image/') && (await prisma.user.count({ where: { avatarUrl: avatarPath } }) > 0 || await prisma.conversation.count({ where: { avatarUrl: avatarPath, members: { some: { userId: req.user.id } } } }) > 0);
+  const isAvatar = attachment.mimeType.startsWith('image/') && (await prisma.user.count({ where: { avatarUrl: avatarPath } }) > 0 || await prisma.server.count({ where: { iconUrl: avatarPath, members: { some: { userId: req.user.id } } } }) > 0 || await prisma.conversation.count({ where: { avatarUrl: avatarPath, members: { some: { userId: req.user.id } } } }) > 0);
   const permitted = attachment.ownerId === req.user.id || isAvatar || (attachment.message && !attachment.message.retractedAt && attachment.message.conversation.members.length > 0);
-  if (attachment.ownerId !== req.user.id && attachment.message && !isAvatar) await channelPermission(attachment.message.conversationId, req.user.id);
+  if (attachment.message) await channelPermission(attachment.message.conversationId, req.user.id);
   if (!permitted) throw new HttpError(403, '无权读取这个文件');
   if (!/^[a-f0-9-]+\.[a-z0-9]+$/.test(attachment.storageKey)) throw new HttpError(404, '文件不存在');
   res.setHeader('Content-Type', attachment.mimeType);

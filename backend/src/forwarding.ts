@@ -7,6 +7,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { config, prisma, requireAuth, asyncRoute, validate, HttpError, consumeLimit } from './context.js';
 import { lockConversation, membership, writable, messageInclude, serializeMessage } from './chat.js';
+import { channelPermission } from './channel-policy.js';
 import { emitUsers } from './realtime.js';
 const router = Router(); router.use(requireAuth);
 router.post('/conversations/:id/forward', asyncRoute(async (req, res) => {
@@ -33,6 +34,7 @@ router.post('/conversations/:id/forward', asyncRoute(async (req, res) => {
     const sources = await tx.message.findMany({ where: { id: { in: input.sourceIds }, retractedAt: null, hidden: { none: { userId: req.user.id } } }, include: { attachments: true, sender: { select: { displayName: true } } } });
     if (sources.length !== input.sourceIds.length) throw new HttpError(403, '部分原消息不可访问', 'FORWARD_SOURCE_UNAVAILABLE');
     for (const source of sources) await membership(source.conversationId, req.user.id, tx);
+    if (sources.some(s => s.attachments.length)) { const access = await channelPermission(target, req.user.id, true, tx); if (access && !access.permissions.upload) throw new HttpError(403, '此频道不允许上传文件', 'CHANNEL_UPLOAD_FORBIDDEN'); }
     if (sources.reduce((total, m) => total + m.attachments.reduce((n, a) => n + a.size, 0), 0) > 50 * 1024 * 1024) throw new HttpError(400, '单次转发附件总量不能超过 50 MiB', 'FORWARD_TOO_LARGE');
     const duplicate = await tx.forwardBatch.findUnique({ where: { userId_clientId: { userId: req.user.id, clientId: input.clientId } } });
     if (duplicate) { if (duplicate.payloadHash !== payloadHash) throw new HttpError(409, '转发标识已使用', 'FORWARD_CONFLICT'); return duplicate; }

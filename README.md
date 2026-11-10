@@ -2,7 +2,7 @@
 
 原创、响应式实时聊天网站，支持中文界面、亮/暗主题，适用于电脑和手机浏览器。采用 React 19 / TypeScript / Vite / Tailwind CSS / React Router，以及 Node.js / Express / Socket.IO / Prisma / PostgreSQL / Redis。代码与部署文件完整保存在本仓库，无内置账户或默认管理员密码。
 
-输入框及后续功能升级正在开发中，完整范围、已执行测试、未完成项与数据保护更新流程见 [升级状态](docs/NEXT-UPGRADE.md)。当前开发分支不代表完整升级已验收或部署。
+社区、频道权限、双向私密工单、可安装机器人及新版认证页面的接口、权限和更新说明见 [社区文档](docs/communities.md)、[机器人示例](docs/bots.md) 与 [港景登录/注册](docs/auth-harbor.md)。局部测试与完整验收结果分别记录，代码更新不会自动部署生产。
 
 ## 聊天频率修复（2026-11-09）
 
@@ -12,39 +12,34 @@
 
 本次修复不新增环境变量、迁移或数据清理操作；无需清空 Redis。沿用原 Compose 项目、Caddy 配置及持久卷，更新代码后重建 `backend` 和 `nginx`，浏览器刷新页面以加载新前端。生产更新流程见下文；如果尚未部署社区升级，main 中仍包含该升级的增量迁移。线上效果须在服务器更新后验证。
 
-## 社区升级（已合并 main，尚未部署）
+## 社区、频道、工单与机器人
 
-main 已包含社区、文字频道、频道分类和邀请系统，入口位于左侧导航栏。现有私聊、好友和群聊继续保留，频道复用 Conversation/Message，不会把旧群聊改名为社区。
+社区与私聊保留独立入口，复用现有消息、附件、回复、搜索、未读和实时通信。支持分类、文字/公告/私密频道、身份组和频道权限覆盖、普通成员预览、可过期/限次/撤销的邀请、成员管理与社区主转让。归档保留历史，改为只读。
 
-- 创建社区后自动建立 #general；新增/改名/介绍/分类/位置排序、私密频道和只读公告。
-- OWNER/ADMIN 管理社区及频道，MODERATOR 可邀请与禁言/移除普通成员。仅 OWNER 分配角色；所有者不能直接退出。
-- 私密频道仅所有者、管理员和显式授权成员可见；普通版主不会自动获得私密访问。公告频道版主及以上可发消息。禁言时不能发送、编辑或输入提示。
-- 邀请支持 1–168 小时有效期、1–200 次使用、预览与撤销；Token 只显示一次，数据库仅保存 SHA-256；加入串行处理，防止并发超额。
-- HTTP、WebSocket 输入提示和附件读取共享权限模块；移除/降级/撤销私密权限会同步撤销原消息成员权限。踢出会清除私密授权，重新加入不会恢复。
-- 频道归档采用软删除，保留其 Conversation、Message 和附件；危险管理操作记录 AdminAction。
-- 社区上限 200 人、50 个活动频道、30 个分类；单账号最多 50 个社区。暂不提供语音频道、所有者转让、社区解散、自定义角色、拖动排序和频道搜索消息。位置排序目前通过设置数字完成，搜索框只筛选频道名称。
+成员可联系社区主，社区主也可主动为成员开私密工单；同一工单共享聊天、历史和附件。默认仅当事成员与当前社区主可读，显式指派后处理人才能加入。管理员和机器人不会自动获得工单权限。关闭/重开保留原记录，角色撤销与所有权转让同步更新读者。
 
-验证状态及后续范围见 [docs/UPGRADE-STATUS.md](docs/UPGRADE-STATUS.md)。社区与频道核心已于 2026-11-09 通过 [PR #1](https://github.com/HuanxiangGG/chatserver/pull/1) 合入 main；整体升级仍有未完成项，线上尚未部署此版本。
+社区设置支持欢迎机器人与自定义 Bot 的安装、频道授权、配置、停用和移除。欢迎仅发送一次；`/help` 与 `/ticket` 私密处理。仓库提供运行在开发者服务中的 Node.js Bot 示例，凭证单独保存并可轮换，泊岸不执行上传代码。
 
-### 新迁移与更新门槛
+完整权限、API、事件、限制、实际测试及安全更新步骤见 [docs/communities.md](docs/communities.md)。语音、屏幕共享、论坛、讨论串、投票、活动和自定义表情属于后续扩展，没有占位入口。
 
-`20261109100000_community_channels` 仅新增 7 张社区表及其索引、外键；不清空或重建原用户、群聊、消息表，不改 PostgreSQL/Redis/上传卷及 Caddy/Compose 配置。Prisma Client 需要重新生成；发布时前后端均需重新构建容器。后端启动仍执行 `prisma migrate deploy`。
+### 第 9 个增量迁移与更新门槛
 
-生产更新前必须按已有流程核对 Compose 项目、挂载和原版本，完成数据库与上传备份并在独立目标恢复验证。合入 main 不代表已完成生产验收。完成备份、恢复和兼容回滚验证后，在原目录执行：
+`20261110080000_community_roles_tickets_bots` 只增加规则/图标、权限覆盖、身份组、工单和 Bot 关系表；原 8 个迁移不变，旧用户、私聊、群聊、历史和上传文件不被重建或清空。无新增生产环境变量，保留原 Docker Compose + Caddy、PostgreSQL / Redis / 上传卷和 `.env`。需要重新构建后端与前端镜像。
+
+先在原项目、原 Compose 项目名下执行 `scripts/data-inventory.sh` 保存私有清单，运行 `scripts/backup.sh` 备份数据库和上传文件，并在新的隔离目标恢复验证。备份路径和清单不提交 Git。然后沿用原配置更新；下面适用于宿主机 Caddy，实际文件组合与端口以服务器现状为准：
 
 ```bash
-git pull --ff-only
 export COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml
-# 确保使用服务器原有 Compose 项目名，不创建替代数据卷
-docker compose up -d --build --no-deps backend nginx
+git pull --ff-only
+docker compose build backend nginx
+docker compose run --rm --no-deps backend npx prisma migrate deploy
+docker compose up -d --no-deps backend nginx
 docker compose exec -T backend npx prisma migrate deploy
 docker compose ps
 curl --fail http://127.0.0.1:8080/api/health
 ```
 
-端口或 Compose 文件组合以服务器现有配置为准。不要执行 down -v、migrate reset、volume prune。更新后核对旧用户/消息/附件计数、原卷挂载名称及上传清单；当前线上未执行本次迁移，也未进行数据完整性验收。
-
-回滚时保留新增表及数据。**新社区产生数据后，不应直接降级到不认识 CHANNEL 权限的旧后端**，否则可能破坏公告/私密权限语义；应暂停应用访问并向前修复，或使用已经验证过的社区兼容版本。禁止为回滚删除新表或覆盖生产数据库。生产回滚演练仍待完成。
+再次保存清单，核对旧用户/消息数量、原卷挂载及上传文件哈希；正常新消息和内置 Bot 可能增加计数。完整备份、隔离恢复、前后清单命令见 [社区更新步骤](docs/communities.md#增量迁移与生产更新)。不要重置数据库或删除数据卷；不自动部署到公网。新 CHANNEL/TICKET 数据产生后，旧后端可能不理解其权限，回滚需使用兼容版本或向前修复，不能通过删除新表或覆盖生产库回滚。
 
 ## 功能
 
@@ -66,8 +61,8 @@ curl --fail http://127.0.0.1:8080/api/health
 │   ├── test/                真实 PostgreSQL/Redis 集成测试
 │   └── Dockerfile
 ├── prisma/
-│   ├── schema.prisma        原 13 个模型及 7 个新增社区模型
-│   └── migrations/          初始迁移及仅新增表的社区迁移
+│   ├── schema.prisma        账号、聊天、社区、身份组、工单与机器人模型
+│   └── migrations/          初始迁移及保留数据的增量迁移
 ├── nginx/                   前端构建、反向代理与 HTTPS 配置
 ├── scripts/                 生成环境配置、备份、非覆盖恢复、更新
 ├── docs/                    计划、接口约定和验收记录

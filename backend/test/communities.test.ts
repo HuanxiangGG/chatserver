@@ -13,11 +13,11 @@ let owner: Person, member: Person, outsider: Person, moderator: Person, extra: P
 let community: string, general: string, privateChannel: any, announcement: any, inviteToken: string, attachmentId: string, messageId: string;
 const sockets: Socket[] = [];
 function api(person?: Person) {
-  const call = (method: 'get' | 'post' | 'patch' | 'delete', path: string, body?: any) => {
+  const call = (method: 'get' | 'post' | 'patch' | 'put' | 'delete', path: string, body?: any) => {
     const r = request(app)[method](`/api${path}`).set('Origin', origin).set('Cookie', person?.cookie || '').set('X-CSRF-Token', person?.csrfToken || '');
     return body === undefined ? r : r.send(body);
   };
-  return { get: (p: string) => call('get', p), post: (p: string, b: any = {}) => call('post', p, b), patch: (p: string, b: any) => call('patch', p, b), delete: (p: string, b: any = {}) => call('delete', p, b) };
+  return { get: (p: string) => call('get', p), post: (p: string, b: any = {}) => call('post', p, b), patch: (p: string, b: any) => call('patch', p, b), put: (p: string, b: any) => call('put', p, b), delete: (p: string, b: any = {}) => call('delete', p, b) };
 }
 async function register(name: string): Promise<Person> {
   const r = await api().post('/auth/register', { username: prefix + name, displayName: name, email: `${prefix}${name}@example.test`, password: 'OnlyTest-Harbor-953!' });
@@ -147,9 +147,72 @@ it('expired and revoked invites are denied without changing memberships', async 
   const expiredToken = await invite(); const expired = await prisma.serverInvite.findFirst({ where: { serverId: community }, orderBy: { createdAt: 'desc' } }); await prisma.serverInvite.update({ where: { id: expired.id }, data: { expiresAt: new Date(0) } });
   expect((await api().get(`/invites/${expiredToken}`)).status).toBe(404);
 });
-it('archiving a channel preserves message/attachment records, closes access and writes audit log', async () => {
+it('archiving a channel preserves read access and records, denies writes and audits', async () => {
   expect((await api(owner).delete(`/servers/${community}/channels/${privateChannel.id}`)).status).toBe(200);
-  expect((await api(owner).get(`/conversations/${privateChannel.conversationId}/messages`)).status).toBe(403);
+  expect((await api(owner).get(`/conversations/${privateChannel.conversationId}/messages`)).status).toBe(200);
+  expect((await send(owner, privateChannel.conversationId)).status).toBe(403);
   expect(await prisma.message.count({ where: { id: messageId } })).toBe(1); expect(await prisma.messageAttachment.count({ where: { id: attachmentId } })).toBe(1);
   expect(await prisma.adminAction.count({ where: { actorId: owner.user.id, action: 'SERVER_CHANNEL_ARCHIVE', targetId: privateChannel.id } })).toBe(1);
+});
+
+it('custom roles grant scoped channel capabilities without role escalation or cross-community references', async () => {
+  await api(extra).post(`/invites/${await invite()}/join`);
+  const role = await api(owner).post(`/servers/${community}/roles`, { name: '攻略作者', position: 20, permissions: { send: false, upload: false, manageMessages: true, manageChannels: true, handleTickets: true } });
+  expect(role.status, JSON.stringify(role.body)).toBe(201);
+  expect((await api(extra).put(`/servers/${community}/roles/${role.body.id}/members`, { userIds: [extra.user.id] })).status).toBe(403);
+  expect((await api(owner).put(`/servers/${community}/roles/${role.body.id}/members`, { userIds: [owner.user.id] })).status).toBe(403);
+  expect((await api(owner).put(`/servers/${community}/roles/${role.body.id}/members`, { userIds: [extra.user.id] })).status).toBe(200);
+  const lower = await api(owner).post(`/servers/${community}/roles`, { name: '基础发言', position: 10, permissions: { send: true } }); expect(lower.status).toBe(201);
+  expect((await api(owner).put(`/servers/${community}/roles/${lower.body.id}/members`, { userIds: [extra.user.id] })).status).toBe(200);
+  expect((await send(extra, general)).status).toBe(403);
+  const moderated = await send(owner, general, '待处理消息'); expect(moderated.status).toBe(201);
+  expect((await api(extra).post(`/messages/${moderated.body.id}/retract`)).status).toBe(200);
+  const room = await api(extra).post(`/servers/${community}/channels`, { name: '攻略', isPrivate: true, permissionOverrides: { send: false, upload: false }, roleOverrides: [{ roleId: role.body.id, permissions: { view: true, send: true } }] });
+  expect(room.status, JSON.stringify(room.body)).toBe(201);
+  expect((await send(extra, room.body.conversationId)).status).toBe(201);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKAAAAABJRU5ErkJggg==', 'base64');
+  const upload = await request(app).post(`/api/uploads?conversationId=${room.body.conversationId}`).set('Origin', origin).set('Cookie', extra.cookie).set('X-CSRF-Token', extra.csrfToken).attach('file', png, { filename: 'blocked.png', contentType: 'image/png' }); expect(upload.status).toBe(403);
+  expect((await api(moderator).get(`/conversations/${room.body.conversationId}/messages`)).status).toBe(403);
+  expect((await api(extra).post(`/servers/${community}/roles`, { name: '提权', permissions: { installBots: true } })).status).toBe(403);
+  const other = await api(owner).post('/servers', { name: '第二社区' }); expect(other.status).toBe(201);
+  expect((await api(owner).post(`/servers/${other.body.id}/channels`, { name: '越权身份组', roleOverrides: [{ roleId: role.body.id, permissions: { view: true } }] })).status).toBe(400);
+  const otherDetail = await api(owner).get(`/servers/${other.body.id}`);
+  expect((await send(extra, otherDetail.body.channels[0].conversationId)).status).toBe(403);
+  expect((await api(owner).patch(`/servers/${community}/channels/${room.body.id}`, { roleOverrides: [{ roleId: role.body.id, permissions: { view: true, send: true, manageChannels: false } }] })).status).toBe(200);
+  expect((await api(extra).patch(`/servers/${community}/channels/${room.body.id}`, { name: '覆盖管理拒绝' })).status).toBe(403);
+  expect((await api(extra).delete(`/servers/${community}/channels/${room.body.id}`)).status).toBe(403);
+  const assignedTicket = await api(owner).post(`/servers/${community}/tickets`, { memberId: moderator.user.id, subject: '角色撤销验证', category: '支持', content: '处理权限即时撤销', clientId: randomUUID() }); expect(assignedTicket.status).toBe(201);
+  expect((await api(owner).patch(`/tickets/${assignedTicket.body.id}`, { assigneeId: extra.user.id })).status).toBe(200);
+  expect((await api(extra).get(`/tickets/${assignedTicket.body.id}`)).status).toBe(200);
+  expect((await api(owner).patch(`/servers/${community}/roles/${role.body.id}`, { permissions: { view: false, send: false, upload: false, manageChannels: true } })).status).toBe(200);
+  expect((await api(extra).get(`/tickets/${assignedTicket.body.id}`)).status).toBe(403);
+  expect((await api(extra).get('/conversations')).body.some((c: any) => c.id === assignedTicket.body.conversationId)).toBe(false);
+  expect(await prisma.conversationMember.count({ where: { conversationId: assignedTicket.body.conversationId, userId: extra.user.id } })).toBe(0);
+  expect((await api(extra).get(`/conversations/${general}/messages`)).status).toBe(403);
+  expect((await api(extra).get(`/servers/${community}`)).body.channels.some((c: any) => c.conversationId === general)).toBe(false);
+  expect((await api(owner).delete(`/servers/${community}/roles/${lower.body.id}`)).status).toBe(200);
+  expect((await api(owner).delete(`/servers/${community}/roles/${role.body.id}`)).status).toBe(200);
+  expect((await api(extra).get(`/conversations/${room.body.conversationId}/messages`)).status).toBe(403);
+  expect((await api(extra).post(`/servers/${community}/channels`, { name: '已撤销权限' })).status).toBe(403);
+});
+it('ordinary-member preview hides private channel metadata and exposes effective read-only permissions', async () => {
+  const preview = await api(owner).get(`/servers/${community}/preview`); expect(preview.status).toBe(200);
+  expect(preview.body.role).toBe('MEMBER'); expect(preview.body.channels.some((c: any) => c.id === privateChannel.id)).toBe(false);
+  const notice = preview.body.channels.find((c: any) => c.id === announcement.id); expect(notice.permissions.view).toBe(true); expect(notice.permissions.send).toBe(false); expect(notice.permissions.upload).toBe(false);
+  expect((await api(extra).get(`/servers/${community}/preview`)).status).toBe(403);
+});
+it('community settings and ownership transfer remain scoped and refresh inherited readers', async () => {
+  expect((await api(owner).patch(`/servers/${community}`, { rules: '保持友善', description: '游戏交流社' })).status).toBe(200);
+  expect((await api(extra).patch(`/servers/${community}`, { rules: '越权' })).status).toBe(403);
+  expect((await api(extra).post(`/servers/${community}/transfer`, { userId: extra.user.id })).status).toBe(403);
+  expect((await api(owner).post(`/servers/${community}/transfer`, { userId: outsider.user.id })).status).toBe(403);
+  const ticket = await api(owner).post(`/servers/${community}/tickets`, { memberId: moderator.user.id, subject: '所有权交接', category: '支持', content: '只交接当前社区主', clientId: randomUUID() }); expect(ticket.status).toBe(201);
+  expect((await api(owner).post(`/servers/${community}/transfer`, { userId: extra.user.id })).status).toBe(200);
+  expect((await api(extra).get(`/tickets/${ticket.body.id}`)).status).toBe(200);
+  expect((await api(owner).get(`/tickets/${ticket.body.id}`)).status).toBe(403);
+  expect((await api(owner).get('/conversations')).body.some((c: any) => c.id === ticket.body.conversationId)).toBe(false);
+  expect((await api(moderator).get(`/tickets/${ticket.body.id}`)).status).toBe(200);
+  const detail = await api(extra).get(`/servers/${community}`); expect(detail.body.role).toBe('OWNER'); expect(detail.body.ownerId).toBe(extra.user.id); expect(detail.body.rules).toBe('保持友善');
+  expect((await api(owner).post(`/servers/${community}/transfer`, { userId: owner.user.id })).status).toBe(403);
+  expect(await prisma.message.count({ where: { id: messageId } })).toBe(1);
 });

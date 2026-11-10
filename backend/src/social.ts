@@ -15,7 +15,7 @@ async function assertAvailable(tx: Prisma.TransactionClient, a: string, b: strin
 }
 router.get('/users', asyncRoute(async (req, res) => {
   const q = validate(z.string().trim().min(2).max(64), req.query.q);
-  const users = await prisma.user.findMany({ where: { id: { not: req.user.id }, banned: false, OR: [{ username: { contains: q.toLowerCase(), mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }] }, select: publicUserSelect, take: 30, orderBy: { username: 'asc' } });
+  const users = await prisma.user.findMany({ where: { id: { not: req.user.id }, banned: false, role: { not: 'BOT' }, OR: [{ username: { contains: q.toLowerCase(), mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }] }, select: publicUserSelect, take: 30, orderBy: { username: 'asc' } });
   res.json(users);
 }));
 router.get('/users/:id', asyncRoute(async (req, res) => {
@@ -39,7 +39,7 @@ router.post('/friend-requests', asyncRoute(async (req, res) => {
   const { userId } = validate(z.object({ userId: userIdSchema }), req.body);
   if (userId === req.user.id) throw new HttpError(400, '不能添加自己');
   const target = await prisma.user.findUnique({ where: { id: userId } });
-  if (!target || target.banned) throw new HttpError(404, '用户不存在');
+  if (!target || target.banned || target.role === 'BOT') throw new HttpError(404, '用户不存在');
   const request = await prisma.$transaction(async tx => {
     await lockPair(tx, req.user.id, userId);
     await assertAvailable(tx, req.user.id, userId);

@@ -53,7 +53,7 @@ export const hashToken = (token: string) => createHash('sha256').update(token).d
 export async function authenticateToken(token: string | undefined) {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) throw new HttpError(401, '未收到会话 Cookie，请先登录；若刚登录，请检查浏览器 Cookie 与 HTTPS 配置', 'COOKIE_MISSING');
   const session = await prisma.session.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: true } });
-  if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.banned) throw new HttpError(401, '登录已失效，请重新登录');
+  if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.banned || session.user.role === 'BOT') throw new HttpError(401, '登录已失效，请重新登录');
   const { user, ...safeSession } = session;
   return { user, session: safeSession };
 }

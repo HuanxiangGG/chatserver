@@ -31,7 +31,7 @@ router.post('/auth/login', asyncRoute(async (req, res) => {
   let user = await prisma.user.findFirst({ where: { OR: [{ username: input.username }, { email: input.username }] } });
   if (user?.banned && user.bannedUntil && user.bannedUntil <= new Date()) { await expireBan(user.id); user = await prisma.user.findUnique({ where: { id: user.id } }); }
   const correct = await compare(input.password, user?.passwordHash ?? await dummyHash);
-  if (!user || !correct || user.banned) throw new HttpError(401, '用户名或密码错误，或账户不可用');
+  if (!user || !correct || user.banned || user.role === 'BOT') throw new HttpError(401, '用户名或密码错误，或账户不可用');
   const { token, session } = await prisma.$transaction(async tx => {
     // Serialize with password changes and bans so a login checked against an old
     // password cannot create a fresh session after all sessions were revoked.

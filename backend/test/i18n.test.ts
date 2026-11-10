@@ -4,7 +4,12 @@ import React, {act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {setLanguage, translate, localizeApiError, useTranslation} from '../../frontend/src/i18n';
 import {roleNames} from '../../frontend/src/communities';
-import dictionaries from '../../frontend/src/locales/sound.json';
+import {readFileSync,readdirSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {dirname,resolve,join} from 'node:path';
+const localeDir=resolve(dirname(fileURLToPath(import.meta.url)), '../../frontend/src/locales');
+const dictionaries:Record<'zh-CN'|'en',Record<string,string>>={'zh-CN':{},en:{}};
+for(const file of readdirSync(localeDir).filter(f=>f.endsWith('.json')&&f!=='api-errors.json')){const catalog=JSON.parse(readFileSync(join(localeDir,file),'utf8'));for(const language of ['zh-CN','en'] as const)Object.assign(dictionaries[language],catalog[language]);}
 import apiKeys from '../../frontend/src/locales/api-errors.json';
 afterEach(()=>{setLanguage('zh-CN');localStorage.clear();});
 it('matches all language keys and interpolation variables',()=>{
