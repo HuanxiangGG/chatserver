@@ -111,7 +111,8 @@ export function AuthPage({
     }
   }
   return (
-    <main className="auth-layout">
+    <main className="auth-screen">
+      <div className="auth-layout">
       <section className="auth-story">
         <Brand />
         <div className="story-content">
@@ -150,7 +151,8 @@ export function AuthPage({
         <div className="auth-mobile-brand">
           <Brand />
         </div>
-        <div className="auth-form-wrap"><label className="auth-language">{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t('chinese')}</option><option value="en">{t('english')}</option></select></label><button type="button" className="btn btn-secondary auth-appearance" onClick={() => setAppearanceOpen(true)}><Palette size={16}/>{t('appearanceTitle')}</button>
+        <div className="auth-toolbar"><label className="auth-language">{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t('chinese')}</option><option value="en">{t('english')}</option></select></label><button type="button" className="btn btn-secondary auth-appearance" onClick={() => setAppearanceOpen(true)}><Palette size={16}/>{t('appearanceTitle')}</button></div>
+        <div className="auth-form-wrap">
           <span className="eyebrow">
             {mode === "register" ? t('auth22') : t('auth23')}
           </span>
@@ -197,7 +199,6 @@ export function AuthPage({
                     name="username"
                     required
                     autoComplete="username"
-                    autoFocus
                     minLength={3}
                     maxLength={mode === "register" ? 24 : 254}
                     placeholder={
@@ -245,7 +246,6 @@ export function AuthPage({
                     type="email"
                     required
                     autoComplete="email"
-                    autoFocus
                     placeholder={t('authEmailExample')}
                   />
                 </label>
@@ -257,7 +257,6 @@ export function AuthPage({
                     defaultValue={recoveryToken}
                     required
                     autoComplete="off"
-                    autoFocus
                     placeholder={t('auth41')}
                   />
                 </label>
@@ -349,6 +348,7 @@ export function AuthPage({
         </div>
         <div className="auth-bottom">{t('auth70')}</div>
       </section>
+      </div>
       {appearanceOpen && <Dialog title={t('appearanceTitle')} onClose={() => setAppearanceOpen(false)}><AppearanceSettings /></Dialog>}
     </main>
   );

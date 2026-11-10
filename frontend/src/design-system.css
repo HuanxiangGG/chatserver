@@ -423,45 +423,10 @@ input[type="range"] {
   line-height: 1.8;
   color: var(--muted);
 }
-.auth-page {
-  background: var(--app);
-  height: 100%;
-  overflow: auto;
-}
-.auth-story {
-  background:
-    radial-gradient(ellipse at 0 0, #6257b840, transparent 65%), var(--surface);
-  color: var(--text);
-}
-.auth-form-panel {
-  background: var(--app);
-}
-.auth-form-wrap {
-  width: min(100%, 430px);
-}
-.auth-form-wrap h2 {
-  letter-spacing: -0.04em;
-}
-.auth-form-wrap input {
-  background: var(--surface);
-}
-.auth-top-tag,
-.auth-story-description {
-  color: var(--subtle);
-}
-.auth-appearance {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 4;
-}
 .password-field button {
   width: 44px;
   height: 44px;
   right: 2px;
-}
-.auth-bottom {
-  color: var(--muted);
 }
 .search-result {
   background: var(--soft);

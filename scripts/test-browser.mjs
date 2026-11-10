@@ -135,3 +135,5 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
 }
 await writeFile(new URL('matrix.json', output), JSON.stringify(results, null, 2), { mode: 0o600 });
 console.log(`Browser acceptance passed: ${results.length} Chromium/WebKit viewports; ordered real Socket delivery and composer focus passed in both engines.`);
+
+await import("./test-auth-layout.mjs");
