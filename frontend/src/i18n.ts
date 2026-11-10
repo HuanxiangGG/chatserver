@@ -1,10 +1,14 @@
+import ticketBotMessages from './locales/ticket-bot.json';
+import communityPolicyMessages from './locales/community-policy.json';
+import communityMessages from './locales/community.json';
+import harborAuthMessages from './locales/auth-harbor.json';
 import apiErrors from './locales/api-errors.json';
 import { useSyncExternalStore } from 'react';
 import baseMessages from './locales/sound.json';
 import appearanceMessages from './locales/appearance.json';
 import navigationMessages from './locales/navigation.json';
 import redesignMessages from './locales/ui-redesign.json';
-const messages = { 'zh-CN': { ...baseMessages['zh-CN'], ...appearanceMessages['zh-CN'], ...navigationMessages['zh-CN'], ...redesignMessages['zh-CN'] }, en: { ...baseMessages.en, ...appearanceMessages.en, ...navigationMessages.en, ...redesignMessages.en } };
+const messages = { 'zh-CN': { ...baseMessages['zh-CN'], ...communityMessages['zh-CN'], ...ticketBotMessages['zh-CN'], ...communityPolicyMessages['zh-CN'], ...appearanceMessages['zh-CN'], ...navigationMessages['zh-CN'], ...redesignMessages['zh-CN'], ...harborAuthMessages['zh-CN'] }, en: { ...baseMessages.en, ...communityMessages.en, ...ticketBotMessages.en, ...communityPolicyMessages.en, ...appearanceMessages.en, ...navigationMessages.en, ...redesignMessages.en, ...harborAuthMessages.en } };
 export type Language = 'zh-CN' | 'en';
 export type TranslationKey = keyof typeof messages.en;
 const storageKey = 'harbor.language';

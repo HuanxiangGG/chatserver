@@ -1,0 +1,16 @@
+{
+  "zh-CN": {
+    "communityRoleForeign": "身份组不属于此社区",
+    "communityTransferSelf": "不能转让给自己",
+    "communityRoleLimit": "身份组数量已达上限",
+    "communityRoleMissing": "身份组不存在",
+    "communitySettingInvalid": "输入内容格式或长度不符合要求"
+  },
+  "en": {
+    "communityRoleForeign": "This role belongs to another community.",
+    "communityTransferSelf": "Choose another community member to transfer ownership.",
+    "communityRoleLimit": "This community has reached its role limit.",
+    "communityRoleMissing": "This role no longer exists. Refresh the page.",
+    "communitySettingInvalid": "Check the format and length of this field."
+  }
+}

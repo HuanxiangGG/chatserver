@@ -10,7 +10,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
-  MessageCircle,
+  MessageCircle, Hash,
   Users,
   Settings,
   Shield,
@@ -137,7 +137,7 @@ export function Layout() {
   const task = useTask(), location = useLocation(), navigate = useNavigate(), drawer = useRef<HTMLDivElement>(null), accountButton = useRef<HTMLButtonElement>(null);
   const isCommunity = location.pathname.startsWith('/servers/'), serverId = isCommunity ? location.pathname.split('/')[2]! : '';
   const onChat = location.pathname.startsWith('/chat') || isCommunity;
-  const active = isCommunity ? (location.pathname.endsWith('/settings') ? 'settings' : location.pathname.split('/')[4]) : location.pathname.split('/')[2];
+  const active = isCommunity ? (location.pathname.endsWith('/settings') ? 'settings' : location.pathname.split('/')[3] === 'tickets' ? 'tickets' : location.pathname.split('/')[4]) : location.pathname.split('/')[2];
   const view = new URLSearchParams(location.search).get('view') || 'all';
   useEffect(() => { setSidebarOpen(false); setMenu(false); }, [location.pathname, location.search]);
   useEffect(() => {
@@ -169,7 +169,7 @@ export function Layout() {
     else if (!event.shiftKey && document.activeElement === items.at(-1)) { event.preventDefault(); items[0]?.focus(); }
   }
   function navClass(selected: boolean) { return `rail-link ${selected ? 'active' : ''}`; }
-  const unread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+  const unread = conversations.filter(c=>c.type==='DIRECT'||c.type==='GROUP').reduce((sum, c) => sum + c.unreadCount, 0);
   return <div className={`app-layout ${collapsed ? 'nav-is-collapsed' : 'nav-is-expanded'} ${sidebarOpen ? 'sidebar-is-open' : ''} ${onChat && active ? 'layout-has-conversation' : ''}`}>
     {onChat && <button className="mobile-sidebar-toggle icon-btn" aria-label={tr('navDrawerTitle')} title={tr('navDrawerTitle')} aria-expanded={sidebarOpen} aria-controls="conversation-drawer" onClick={() => setSidebarOpen(v => !v)}><Menu size={22} /></button>}
     <aside className="nav-rail" aria-label={tr('screen339')}>
@@ -177,12 +177,13 @@ export function Layout() {
       <nav aria-label={tr('screen339')}>
         <span className="rail-section-label">{tr('navWorkspace')}</span>
         <Link to="/chat" title={tr('navChat')} className={navClass(location.pathname.startsWith('/chat') && view === 'all')}><MessageCircle size={21} /><span className="rail-label">{tr('navChat')}</span>{unread > 0 && <span className="rail-count" aria-label={tr('navUnreadCount', {count: unread})}>{Math.min(unread, 99)}</span>}</Link>
+        <NavLink to="/communities" title={tr('communityCommunities')} className={({isActive}) => navClass(isActive)}><Hash size={21}/><span className="rail-label">{tr('communityCommunities')}</span></NavLink>
         <NavLink to="/friends" title={tr('screen341')} className={({isActive}) => navClass(isActive)}><Users size={21} /><span className="rail-label">{tr('screen341')}</span>{requests.incoming.length > 0 && <span className="rail-count">{requests.incoming.length}</span>}</NavLink>
         <Link to="/chat?view=groups" title={tr('navGroups')} className={navClass(location.pathname.startsWith('/chat') && view === 'groups')}><Users size={21} /><span className="rail-label">{tr('navGroups')}</span></Link>
         <Link to="/chat?view=unread" title={tr('navNotifications')} className={navClass(location.pathname.startsWith('/chat') && view === 'unread')}><Bell size={21} /><span className="rail-label">{tr('navNotifications')}</span></Link>
         {user?.role === 'ADMIN' && <NavLink to="/admin" title={tr('screen264')} className={({isActive}) => navClass(isActive)}><Shield size={21} /><span className="rail-label">{tr('screen342')}</span></NavLink>}
         <div className="rail-section-heading"><span className="rail-section-label">{tr('navCommunities')}</span><button className="icon-btn" title={tr('screen344')} aria-label={tr('screen344')} onClick={() => setCommunityDialog('create')}><Plus size={18} /></button></div>
-        <div className="rail-community-list">{communities.map(s => <NavLink key={s.id} to={`/servers/${s.id}`} title={s.name} aria-label={tr('screen343', {v0:s.name})} className={`rail-community ${serverId === s.id ? 'active' : ''}`}><span className="community-monogram">{s.name.slice(0, 2)}</span><span className="rail-label">{s.name}</span>{conversations.some(c => c.channel?.serverId === s.id && c.unreadCount > 0) && <i className="rail-dot" />}</NavLink>)}</div>
+        <div className="rail-community-list">{communities.map(s => <NavLink key={s.id} to={`/servers/${s.id}`} title={s.name} aria-label={tr('screen343', {v0:s.name})} className={`rail-community ${serverId === s.id ? 'active' : ''}`}><span className="community-monogram">{s.iconUrl?<img src={s.iconUrl} alt=""/>:s.name.slice(0, 2)}</span><span className="rail-label">{s.name}</span>{conversations.some(c => c.channel?.serverId === s.id && c.unreadCount > 0) && <i className="rail-dot" />}</NavLink>)}</div>
         <button className="rail-link" title={tr('screen345')} onClick={() => setCommunityDialog('join')}><Plus size={20} /><span className="rail-label">{tr('screen345')}</span></button>
       </nav>
       <div className="rail-bottom">
@@ -193,7 +194,7 @@ export function Layout() {
     </aside>
     {onChat && <>{sidebarOpen && <button className="sidebar-scrim" tabIndex={-1} aria-label={tr('navCloseDrawer')} onClick={() => setSidebarOpen(false)} />}<div ref={drawer} id="conversation-drawer" tabIndex={sidebarOpen ? -1 : undefined} className="sidebar-wrapper" role={sidebarOpen ? 'dialog' : undefined} aria-modal={sidebarOpen || undefined} aria-label={sidebarOpen ? tr('navDrawerTitle') : undefined} onKeyDown={trapDrawer} onClick={e => { if ((e.target as HTMLElement).closest('a')) setSidebarOpen(false); }}>{sidebarOpen && <button className="drawer-close icon-btn" aria-label={tr('navCloseDrawer')} onClick={() => setSidebarOpen(false)}><X size={21} /></button>}<div className="mobile-workspaces"><Link to="/profile" aria-label={tr('navProfile')}><Avatar user={user} size="sm" showStatus /><span>{user?.displayName}</span></Link><Link to="/chat?view=unread"><Bell size={18} />{tr('navNotifications')}</Link><Link to="/chat"><MessageCircle size={18} />{tr('navPrivate')}</Link>{communities.map(s => <Link key={s.id} to={`/servers/${s.id}`}><span className="community-monogram">{s.name.slice(0,2)}</span>{s.name}</Link>)}<div><button className="icon-btn" title={tr('screen344')} aria-label={tr('screen344')} onClick={() => { setSidebarOpen(false); setCommunityDialog('create'); }}><Plus size={19} /></button><button className="icon-btn" title={tr('screen345')} aria-label={tr('screen345')} onClick={() => { setSidebarOpen(false); setCommunityDialog('join'); }}><Users size={19} /></button>{user?.role === 'ADMIN' && <Link to="/admin"><Shield size={18} />{tr('screen342')}</Link>}</div></div>{isCommunity ? <CommunitySidebar serverId={serverId} active={active} /> : <ConversationList active={active} view={view} onCreate={() => setStartChat(true)} />}</div></>}
     <main className={`workspace ${onChat ? 'workspace-chat' : ''} ${active ? 'has-conversation' : ''}`}><div className={`connection-banner ${connected ? 'connection-hidden' : ''}`} role="status"><WifiOff size={14} />{tr('screen353')}</div><Outlet /><SoundEntry /></main>
-    <nav className="mobile-bottom-nav" aria-label={tr('screen339')}><Link to="/chat" className={location.pathname.startsWith('/chat') && view !== 'groups' ? 'active' : ''} aria-label={tr('navChat')}><MessageCircle size={21} /><span>{tr('navChat')}</span>{unread > 0 && <i className="mobile-unread-dot" />}</Link><NavLink to="/friends"><Users size={21} /><span>{tr('screen341')}</span></NavLink><Link to="/chat?view=groups" className={view === 'groups' ? 'active' : ''}><Users size={21} /><span>{tr('navGroups')}</span></Link><NavLink to="/settings"><Settings size={21} /><span>{tr('navSettings')}</span></NavLink></nav>
+    <nav className="mobile-bottom-nav" aria-label={tr('screen339')}><Link to="/chat" className={location.pathname.startsWith('/chat') && view !== 'groups' ? 'active' : ''} aria-label={tr('navChat')}><MessageCircle size={21} /><span>{tr('navChat')}</span>{unread > 0 && <i className="mobile-unread-dot" />}</Link><NavLink to="/friends"><Users size={21} /><span>{tr('screen341')}</span></NavLink><NavLink to="/communities"><Hash size={21}/><span>{tr('communityCommunities')}</span></NavLink><NavLink to="/settings"><Settings size={21} /><span>{tr('navSettings')}</span></NavLink></nav>
     {communityDialog && <CommunityDialog join={communityDialog === 'join'} onClose={() => setCommunityDialog(null)} />}
     {startChat && <Dialog title={tr('navCreateChat')} onClose={() => setStartChat(false)}><p className="muted">{tr('navCreateDescription')}</p><div className="start-chat-actions"><button className="btn btn-primary" onClick={() => { setStartChat(false); navigate('/friends'); }}><MessageCircle size={18} />{tr('navFindFriend')}</button><button className="btn btn-secondary" onClick={() => { setStartChat(false); setGroup(true); }}><Users size={18} />{tr('navNewGroup')}</button></div></Dialog>}
     {group && <CreateGroup onClose={() => setGroup(false)} />}
@@ -205,7 +206,7 @@ function ConversationList({active, view, onCreate}: {active?: string; view: stri
   const [search, setSearch] = useState(''), [action, setAction] = useState<string | null>(null), [hide, setHide] = useState<Conversation | null>(null);
   const preferences = useConversationPreferences(user!.id), actionTrigger = useRef<HTMLButtonElement | null>(null);
   function change(id: string, patch: Parameters<typeof updateConversationPreference>[2]) { try { updateConversationPreference(user!.id, id, patch); actionTrigger.current?.focus({ preventScroll: true }); setAction(null); } catch { toast(tr('navPreferencesFailed'), true); } }
-  const visible = orderConversations(conversations, preferences, view === 'archived').filter(c => (view !== 'unread' || c.unreadCount > 0) && (view !== 'groups' || c.type === 'GROUP') && conversationTitle(c,user!.id).toLowerCase().includes(search.toLowerCase()));
+  const visible = orderConversations(conversations.filter(c=>c.type==='DIRECT'||c.type==='GROUP'), preferences, view === 'archived').filter(c => (view !== 'unread' || c.unreadCount > 0) && (view !== 'groups' || c.type === 'GROUP') && conversationTitle(c,user!.id).toLowerCase().includes(search.toLowerCase()));
   const title = view === 'groups' ? tr('navGroups') : view === 'unread' ? tr('navNotifications') : view === 'archived' ? tr('navArchived') : tr('screen354');
   return <aside id="conversation-sidebar" className={`conversation-sidebar ${active ? 'mobile-hide' : ''}`}><header className="sidebar-heading"><div><h1>{title}</h1></div><button className="icon-btn new-chat" title={tr('navCreateChat')} aria-label={tr('navCreateChat')} onClick={onCreate}><Plus size={21} /></button></header>
     <div className="sidebar-search"><Search size={17} /><input placeholder={tr('screen356')} value={search} onChange={e => setSearch(e.target.value)} aria-label={tr('screen356')} />{search && <button className="icon-btn" aria-label={tr('screen357')} onClick={() => setSearch('')}><X size={14} /></button>}</div>

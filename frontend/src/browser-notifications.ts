@@ -30,7 +30,7 @@ export class NotificationDispatcher {
    notice.onclose = () => this.notices.delete(notice);
    if (this.notices.size > 100) { const oldest = this.notices.values().next().value!; oldest.close(); this.notices.delete(oldest); }
    notice.onclick = () => {
-    try { context.open(conversation.channel ? `/servers/${conversation.channel.serverId}/channels/${conversation.id}` : `/chat/${conversation.id}`); }
+    try { context.open(conversation.ticket ? `/servers/${conversation.ticket.serverId}/tickets/${conversation.ticket.id}/chat/${conversation.id}` : conversation.channel ? `/servers/${conversation.channel.serverId}/channels/${conversation.id}` : `/chat/${conversation.id}`); }
     catch { this.reportFailure(); }
     finally { notice.close(); this.notices.delete(notice); }
    };

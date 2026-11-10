@@ -1,3 +1,4 @@
+import { ChannelCommands, ChannelActions }  from './community-tools';
 import { continuesMessageGroup } from './message-grouping';
 import { getLanguage, translate as tr, useLanguage } from './i18n';
 import { ReportButton } from './reports';
@@ -561,7 +562,7 @@ export function ChatPage() {
         <header className="chat-header">
           <Link
             className="icon-btn mobile-back"
-            to={isChannel ? `/servers/${conversation.channel?.serverId}` : "/chat"}
+            to={conversation.ticket ? `/servers/${conversation.ticket.serverId}/tickets` : isChannel ? `/servers/${conversation.channel?.serverId}` : "/chat"}
             aria-label={tr('screen442')}
           >
             <ArrowLeft size={22} />
@@ -570,7 +571,7 @@ export function ChatPage() {
           <div className="chat-header-title">
             <h1>
               <span className="chat-title-text">{title}</span>
-              {isGroup && <span className="group-tag">{isChannel ? tr('screen443') : tr('screen217')}</span>}
+              {isGroup && <span className="group-tag">{conversation.ticket ? tr('communityPrivateTicket') : isChannel ? tr('screen443') : tr('screen217')}</span>}
             </h1>
             <span>
               {isChannel ? conversation.description || tr('screen443') : isGroup
@@ -578,7 +579,7 @@ export function ChatPage() {
                 : statusText(other)}
             </span>
           </div>
-          <div className="chat-header-actions"><button type="button" className="icon-btn forward-trigger" title={t(selecting ? "forwardCancel" : "forwardSelect")} aria-label={t(selecting ? "forwardCancel" : "forwardSelect")} onClick={() => { setSelecting(!selecting); setForwardIds([]); }}><Forward size={19} /></button><MessageSearch key={conversation.id} conversation={conversation} locate={locateMessage} />
+          <div className="chat-header-actions">{isChannel&&<ChannelActions conversation={conversation}/>}<button type="button" className="icon-btn forward-trigger" title={t(selecting ? "forwardCancel" : "forwardSelect")} aria-label={t(selecting ? "forwardCancel" : "forwardSelect")} onClick={() => { setSelecting(!selecting); setForwardIds([]); }}><Forward size={19} /></button><MessageSearch key={conversation.id} conversation={conversation} locate={locateMessage} />
             <button
               className={`icon-btn ${infoOpen ? "selected" : ""}`}
               onClick={() => setInfoOpen(!infoOpen)}
@@ -587,7 +588,7 @@ export function ChatPage() {
             >
               <Info size={21} />
             </button>
-            {isGroup && (
+            {isGroup && !conversation.ticket && (
               <Link
                 className="icon-btn"
                 to={isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`}
@@ -732,6 +733,7 @@ export function ChatPage() {
               {selectedTyping.join("、")} {tr('screen459')}</>
           )}
         </div>
+        {isChannel && <ChannelCommands conversation={conversation} draft={draft} clear={()=>updateDraft('')} />}
         <form className="composer-wrap" onSubmit={send}
           onDragOver={e => { if (e.dataTransfer.types.includes('Files')) e.preventDefault(); }}
           onDrop={e => { if (e.dataTransfer.files.length) { e.preventDefault(); upload(e.dataTransfer.files); } }}>
@@ -760,9 +762,10 @@ export function ChatPage() {
             </div>)}
           </div>}
           {uploading && <div className="upload-progress" role="status"><span>{uploadProgress === 100 ? tr('screen468') : tr('screen469', {v0: uploadProgress})} · {uploadName}</span><progress max={100} value={uploadProgress} aria-label={tr('screen470')} /></div>}
+
           <div className="composer">
             <div className="composer-toolbar composer-attachments">
-              <button type="button" className="icon-btn" aria-label={tr('screen475')} onClick={() => file.current?.click()} disabled={!writable || !!media?.delivery}>{uploading ? <LoaderCircle size={20} className="spin" /> : <Paperclip size={21} />}</button>
+              <button type="button" className="icon-btn" aria-label={tr('screen475')} onClick={() => file.current?.click()} disabled={!writable || conversation.permissions?.upload === false || !!media?.delivery}>{uploading ? <LoaderCircle size={20} className="spin" /> : <Paperclip size={21} />}</button>
               <input hidden type="file" multiple ref={file} accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" onChange={e => upload(e.target.files)} />
             </div>
             <textarea
@@ -788,7 +791,7 @@ export function ChatPage() {
               onBlur={() =>
                 typingReporter.current?.stop()
               }
-              placeholder={!writable ? tr('screen471') : tr('screen472', {v0: title})}
+              placeholder={!writable ? tr('screen471') : tr('communityMessagePlaceholder')}
               aria-label={tr('screen473')}
               maxLength={4000}
             />
@@ -877,7 +880,7 @@ export function ChatPage() {
                   </Link>
                 ))}
               </div>
-              <Link to={isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`} className="btn btn-secondary">
+              <Link to={conversation.ticket ? `/servers/${conversation.ticket.serverId}/tickets` : isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`} className="btn btn-secondary">
                 {isChannel ? tr('screen492') : tr('screen493')} <ArrowRight size={15} />
               </Link>
             </>
@@ -1019,7 +1022,7 @@ function MessageRow({
       </Link>}
       <div className="message-column">
         {!grouped && <div className="message-meta">
-          <strong>{own ? tr('screen499') : m.sender?.displayName || tr('screen281')}</strong>
+          <strong>{own ? tr('screen499') : m.sender?.displayName || tr('screen281')}</strong>{m.sender?.role==='BOT'&&<span className="bot-marker">{tr('communityBotBadge')}</span>}
           <time dateTime={m.createdAt} title={preciseTime} tabIndex={0}>{formatTime(m.createdAt)}</time>
         </div>}
         {grouped && <time className="message-exact-time" dateTime={m.createdAt} title={preciseTime} aria-label={preciseTime} tabIndex={0}>{formatTime(m.createdAt)}</time>}
@@ -1098,6 +1101,8 @@ function MessageRow({
             >
               <Copy size={14} />
               {tr('screen511')}</button>
+            {!own&&conversation.permissions?.manageMessages&&<button onClick={()=>{setMenu(false);onRetract();}}><Trash2 size={14}/>{tr('screen513')}</button>}
+            {!own && conversation.permissions?.manageMessages && <button onClick={()=>{setMenu(false);onRetract();}}><Trash2 size={14}/>{tr('screen513')}</button>}
             {own && (
               <>
                 <button

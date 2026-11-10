@@ -1,3 +1,4 @@
+import { HarborScene } from './harbor-scene';
 import { AppearanceSettings } from './appearance';
 import { getLanguage, setLanguage, useTranslation, type TranslationKey } from './i18n';
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +23,7 @@ export function AuthPage({
 }) {
   const t = useTranslation();
   const [recoveryMail, setRecoveryMail] = useState(false);
+  const [sceneQuiet, setSceneQuiet] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const { user, loading, login, toast } = useApp(),
     navigate = useNavigate(),
@@ -58,7 +60,7 @@ export function AuthPage({
     );
   if (user) return <Navigate to="/chat" replace />;
   const titles = {
-    login: t('auth7'),
+    login: t('harborLoginTitle'),
     register: t('auth8'),
     forgot: t('auth9'),
     reset: t('auth10'),
@@ -109,7 +111,8 @@ export function AuthPage({
     }
   }
   return (
-    <main className="auth-screen">
+    <main className={`auth-screen auth-${mode}`} data-harbor={mode === 'register' ? 'dawn' : 'night'} data-scene-quiet={sceneQuiet}>
+      <HarborScene dawn={mode === 'register'} />
       <div className="auth-layout">
       <section className="auth-form-panel">
         <div className="auth-brand"><Brand /></div>
@@ -136,7 +139,7 @@ export function AuthPage({
                 {t('auth31')}</Link>
             </div>
           ) : (
-            <form onSubmit={submit} className="form-stack" noValidate aria-busy={busy}
+            <form onSubmit={submit} onInput={() => setSceneQuiet(true)} className="form-stack" noValidate aria-busy={busy}
               onChange={e => {
                 const target = e.target as unknown;
                 if (!(target instanceof HTMLInputElement)) return;
@@ -144,7 +147,7 @@ export function AuthPage({
                 if (!input.name) return;
                 const message = fieldError(input.name, input.value, e.currentTarget);
                 input.setAttribute('aria-invalid', String(!!message));
-                input.setAttribute('aria-describedby', 'auth-field-errors');
+                input.setAttribute('aria-describedby', `auth-error-${input.name}`);
                 setFields(previous => ({ ...previous, [input.name]: message }));
                 if (['password', 'newPassword'].includes(input.name)) {
                   setPassword(input.value);
@@ -156,6 +159,8 @@ export function AuthPage({
                 <label>
                   {t('auth32')}<input
                     name="username"
+                    aria-invalid={!!fields.username}
+                    aria-describedby="auth-error-username"
                     required
                     autoComplete="username"
                     minLength={3}
@@ -172,6 +177,7 @@ export function AuthPage({
                         : undefined
                     }
                   />
+                  {fields.username && <span id="auth-error-username" className="field-error">{t(fields.username)}</span>}
                 </label>
               )}
               {mode === "register" && (
@@ -179,22 +185,28 @@ export function AuthPage({
                   <label>
                     {t('auth36')}<input
                       name="displayName"
+                      aria-invalid={!!fields.displayName}
+                      aria-describedby="auth-error-displayName"
                       required
                       minLength={1}
                       maxLength={50}
                       autoComplete="nickname"
                       placeholder={t('auth37')}
                     />
+                    {fields.displayName && <span id="auth-error-displayName" className="field-error">{t(fields.displayName)}</span>}
                   </label>
                   <label>
                     {t('auth38')}<input
                       name="email"
+                      aria-invalid={!!fields.email}
+                      aria-describedby="auth-error-email"
                       type="email"
                       required
                       autoComplete="email"
                       placeholder={t('authEmailExample')}
                       maxLength={254}
                     />
+                    {fields.email && <span id="auth-error-email" className="field-error">{t(fields.email)}</span>}
                   </label>
                 </>
               )}
@@ -202,22 +214,28 @@ export function AuthPage({
                 <label>
                   {t('auth39')}<input
                     name="email"
+                      aria-invalid={!!fields.email}
+                      aria-describedby="auth-error-email"
                     type="email"
                     required
                     autoComplete="email"
                     placeholder={t('authEmailExample')}
                   />
+                  {fields.email && <span id="auth-error-email" className="field-error">{t(fields.email)}</span>}
                 </label>
               )}
               {mode === "reset" && (
                 <label>
                   {t('auth40')}<input
                     name="token"
+                    aria-invalid={!!fields.token}
+                    aria-describedby="auth-error-token"
                     defaultValue={recoveryToken}
                     required
                     autoComplete="off"
                     placeholder={t('auth41')}
                   />
+                  {fields.token && <span id="auth-error-token" className="field-error">{t(fields.token)}</span>}
                 </label>
               )}
               {mode !== "forgot" && (
@@ -226,6 +244,8 @@ export function AuthPage({
                   <span className="password-field">
                     <input
                       name={mode === "reset" ? "newPassword" : "password"}
+                      aria-invalid={!!fields[mode === "reset" ? "newPassword" : "password"] || (mode === "login" && !!error)}
+                      aria-describedby={mode === "login" && error ? "auth-login-error" : `auth-error-${mode === "reset" ? "newPassword" : "password"}`}
                       type={show ? "text" : "password"}
                       required
                       minLength={mode === "login" ? 1 : 10}
@@ -246,16 +266,18 @@ export function AuthPage({
                       {show ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
                   </span>
+                  {fields[mode === 'reset' ? 'newPassword' : 'password'] && <span id={`auth-error-${mode === 'reset' ? 'newPassword' : 'password'}`} className="field-error">{t(fields[mode === 'reset' ? 'newPassword' : 'password'] as TranslationKey)}</span>}
                 </label>
               )}
+              {mode === 'login' && error && <div id="auth-login-error" className="form-error" role="alert">{error}</div>}
               {(mode === 'register' || mode === 'reset') && <>
                 <div className="password-strength" role="status" aria-live="polite">
                   <meter min={0} max={4} value={strength} aria-label={t('auth48')} />
                   <small>{password ? t('authPasswordStrength', {strength: [t('auth49'), t('auth49'), t('auth50'), t('auth51'), t('auth52')][strength]}) : t('auth53')}</small>
                 </div>
-                <label>{t('auth54')}<input name="confirmPassword" type={show ? 'text' : 'password'} autoComplete="new-password" required placeholder={t('auth55')} aria-describedby="auth-field-errors" /></label>
+                <label>{t('auth54')}<input name="confirmPassword" aria-invalid={!!fields.confirmPassword} type={show ? 'text' : 'password'} autoComplete="new-password" required placeholder={t('auth55')} aria-describedby="auth-error-confirmPassword" />{fields.confirmPassword && <span id="auth-error-confirmPassword" className="field-error">{t(fields.confirmPassword)}</span>}</label>
               </>}
-              <div id="auth-field-errors" aria-live="polite">{Object.entries(fields).filter(([, message]) => message).map(([name, message]) => <p className="field-error" key={name}>{message && t(message)}</p>)}</div>
+
               {mode === "login" && (
                 <div className="form-helper">
                   <span>
@@ -263,7 +285,7 @@ export function AuthPage({
                   <Link to="/forgot-password">{t('auth57')}</Link>
                 </div>
               )}
-              {error && (
+              {error && mode !== 'login' && (
                 <div className="form-error" role="alert">
                   {error}
                 </div>

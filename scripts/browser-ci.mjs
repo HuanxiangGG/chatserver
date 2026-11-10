@@ -5,6 +5,8 @@ import { mkdirSync, openSync, closeSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 assert(new URL(process.env.DATABASE_URL || 'postgresql://invalid/unsafe').pathname.endsWith('_test'), 'Browser CI requires a _test database');
 const base = 'http://localhost:5173', children = [], logs = [];
+const testScript = process.env.BROWSER_TEST_SCRIPT || 'scripts/test-browser.mjs';
+assert(['scripts/test-browser.mjs', 'scripts/test-auth-harbor.mjs', 'scripts/test-community-browser.mjs'].includes(testScript), 'Unknown browser suite');
 mkdirSync('test-results/browser', { recursive: true, mode: 0o700 });
 const env = { ...process.env, NODE_ENV: 'development', APP_ORIGIN: base, COOKIE_SECURE: 'false', TRUST_PROXY: '0', PORT: '3000', UI_TEST_BASE_URL: base };
 function start(name, args, cwd = process.cwd()) {
@@ -22,6 +24,6 @@ try {
  let healthy = false;
  for (let i = 0; i < 80; i++) { if (children.some(child => child.exitCode !== null)) throw Error('Browser test service exited; inspect private CI test logs'); try { const response = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1000) }); if (response.ok) { healthy = true; break; } } catch {} await delay(250); }
  assert(healthy, 'Browser test services failed to become healthy');
- const test = spawn(process.execPath, ['scripts/test-browser.mjs'], { env, stdio: 'inherit' }); children.push(test);
+ const test = spawn(process.execPath, [testScript], { env, stdio: 'inherit' }); children.push(test);
  const status = await new Promise((resolve, reject) => { test.once('error', reject); test.once('exit', resolve); }); assert.equal(status, 0, 'Browser acceptance failed');
 } finally { await stop(); }

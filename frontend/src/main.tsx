@@ -15,6 +15,7 @@ import {
 import { AppProvider, useApp } from "./state";
 import { AuthPage } from "./auth-pages";
 import { CommunityPage, InvitePage } from './communities';
+import { CommunityIndex, TicketsPage, TicketChat } from './community-workspace';
 import { Layout } from "./layout";
 import { ChatPage } from "./chat";
 import { FriendsPage, ProfilePage } from "./people";
@@ -55,6 +56,9 @@ function App() {
           <Route path="/reset-password" element={<AuthPage key="reset" mode="reset" />} />
           <Route element={<Guard />}>
             <Route element={<Layout />}>
+              <Route path="/communities" element={<CommunityIndex />} />
+              <Route path="/servers/:serverId/tickets" element={<TicketsPage />} />
+              <Route path="/servers/:serverId/tickets/:ticketId/chat/:id" element={<TicketChat />} />
               <Route path="/servers/:serverId/settings" element={<CommunityPage />} />
               <Route path="/servers/:serverId" element={<CommunityPage />} />
               <Route path="/servers/:serverId/channels/:id" element={<ChatPage />} />

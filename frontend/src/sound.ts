@@ -42,7 +42,7 @@ export class SoundPlayer {
     catch { this.ready = false; this.failed(); return false; }
   }
   async test(s: SoundSettings) { if (!this.ready && !await this.unlock()) return false; return this.play(s.tone === 'soft' ? 0 : 1, s.volume); }
-  async receive(m: Message, s: SoundSettings, context: { userId: string; username: string; type: 'DIRECT' | 'GROUP' | 'CHANNEL'; active: boolean }, now = Date.now()) {
+  async receive(m: Message, s: SoundSettings, context: { userId: string; username: string; type: 'DIRECT' | 'GROUP' | 'CHANNEL' | 'TICKET'; active: boolean }, now = Date.now()) {
     if (this.seen.has(m.id)) return false;
     this.seen.add(m.id); if (this.seen.size > 5000) this.seen.delete(this.seen.values().next().value!);
     if (!Number.isFinite(Date.parse(m.createdAt)) || !this.ready || !s.enabled || !s.volume || quiet(s, new Date(now)) || m.senderId === context.userId || Date.parse(m.createdAt) < this.since) return false;

@@ -54,9 +54,12 @@ export interface Message {
 }
 export interface Conversation {
   id: string;
-  type: "DIRECT" | "GROUP" | "CHANNEL";
+  type: "DIRECT" | "GROUP" | "CHANNEL" | "TICKET";
   channel?: { id: string; serverId: string; readOnly: boolean; isPrivate: boolean } | null;
+  ticket?: { id:string; serverId:string; status:string; memberId:string; assigneeId:string|null } | null;
   canWrite?: boolean;
+  canUpload?: boolean;
+  permissions?:Partial<CommunityPermissions>|null;
   unreadAnnouncements?: number;
   mute?: { permanent: boolean; until: string | null; reason: string } | null;
   name: string | null;
@@ -93,12 +96,17 @@ export interface AuditAction {
 }
 
 export type ServerRole = 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER';
+export type CommunityPermissions = Record<'view'|'send'|'upload'|'manageMessages'|'manageChannels'|'installBots'|'handleTickets',boolean>;
+export interface CommunityRole {id:string;name:string;position:number;permissions:Partial<CommunityPermissions>;members:{userId:string}[]}
 export interface Community {
   id: string; name: string; description: string; ownerId: string; role: ServerRole;
+  rules?:string; iconUrl?:string|null;
   _count?: { members: number };
 }
 export interface CommunityDetail extends Community {
+  permissions: CommunityPermissions;
+  roles: CommunityRole[];
   categories: { id: string; name: string; position: number }[];
   members: { userId: string; role: ServerRole; mutedUntil: string | null; user: User }[];
-  channels: { id: string; conversationId: string; categoryId: string | null; position: number; isPrivate: boolean; readOnly: boolean; conversation: { name: string; description: string }; grants: { userId: string }[] }[];
+  channels: { id: string; conversationId: string; categoryId: string | null; position: number; isPrivate: boolean; readOnly: boolean; archivedAt?:string|null; permissions:CommunityPermissions; permissionOverrides?:Partial<CommunityPermissions>; roleOverrides?:{roleId:string;permissions:Partial<CommunityPermissions>}[]; conversation: { name: string; description: string }; grants: { userId: string }[] }[];
 }

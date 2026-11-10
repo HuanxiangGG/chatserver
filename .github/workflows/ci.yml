@@ -47,6 +47,16 @@ jobs:
           # Keep real browser registrations separate from API tests' IP quotas.
           # Both use the normal limiter, in disposable Redis service databases.
           REDIS_URL: redis://localhost:6379/10
+      - name: Harbor login and registration acceptance
+        run: npm run test:browser:ci
+        env:
+          REDIS_URL: redis://localhost:6379/11
+          BROWSER_TEST_SCRIPT: scripts/test-auth-harbor.mjs
+      - name: Community and private ticket acceptance
+        run: npm run test:browser:ci
+        env:
+          REDIS_URL: redis://localhost:6379/12
+          BROWSER_TEST_SCRIPT: scripts/test-community-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
