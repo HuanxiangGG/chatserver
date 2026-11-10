@@ -103,3 +103,20 @@ it('keeps the failed snapshot and newer typing separately and retries in order',
   expect(posts[0]![1].body.clientId).toBe(posts[1]![1].body.clientId);
   expect(textarea.value).toBe('unfinished draft');
 });
+
+it('accepts forty rapid drafts beyond the former cap and keeps pending delivery unobtrusive', async () => {
+  let resolve!: (value: unknown) => void;
+  mock.api.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+  for (let i = 0; i < 40; i++) { await text(`burst-${i}`); await enter(); }
+  await text('next editable draft');
+  expect(mock.toast).not.toHaveBeenCalled();
+  expect(host.querySelector('.outbox-status')).toBeNull();
+  expect(textarea.value).toBe('next editable draft');
+  expect(document.activeElement).toBe(textarea);
+  await act(async () => resolve(message('burst-0')));
+  const posts = mock.api.mock.calls.filter(([path, options]) => path.endsWith('/messages') && options?.method === 'POST');
+  expect(posts.map(([, options]) => options.body.content)).toEqual(Array.from({ length: 40 }, (_, i) => `burst-${i}`));
+  expect(new Set(posts.map(([, options]) => options.body.clientId)).size).toBe(40);
+  expect(textarea.value).toBe('next editable draft');
+  expect(host.querySelector('.outbox-status')).toBeNull();
+});

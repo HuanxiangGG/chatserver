@@ -459,7 +459,6 @@ export function ChatPage() {
     const pending = queue();
     if (!pending.text.trim() && !pending.items.length) return;
     const existing = outbox.current.find(item => item.pending === pending);
-    if (!existing && outbox.current.length >= 20) { toast(tr('outboxFull'), true); return; }
     if (existing) existing.reply = reply;
     else outbox.current.push({ conversationId: id, pending, reply });
     drafts.current.set(id, new MediaDraft());
@@ -772,7 +771,7 @@ export function ChatPage() {
               <button type="button" className="icon-btn" disabled={!!media.delivery} aria-label={tr('screen466', {v0: item.file.name})} onClick={() => { media.remove(item.id); renderDraft(v => v + 1); }}><X size={16} /></button>
             </div>)}
           </div>}
-          {outbox.current.length > 0 && <div className="outbox-status" role="status"><span>{tr(failedSend ? 'outboxFailed' : 'outboxPending', { count: outbox.current.length })}</span>{failedSend && <><p>{outbox.current[0]?.pending.text || tr('fileType')}</p><button type="button" className="btn btn-secondary" onClick={() => {
+          {failedSend && outbox.current.length > 0 && <div className="outbox-status" role="status"><span>{tr('outboxFailed', { count: outbox.current.length })}</span>{failedSend && <><p>{outbox.current[0]?.pending.text || tr('fileType')}</p><button type="button" className="btn btn-secondary" onClick={() => {
             const first = outbox.current[0];
             if (first && drafts.current.get(first.conversationId) === first.pending) {
               drafts.current.set(first.conversationId, new MediaDraft());

@@ -428,3 +428,7 @@ npm run test:browser:ci
 WebKit 模拟不是实体 iPhone Safari，Chromium 模拟不是实体 Android Chrome。当前未接入实体设备；真实软键盘、中文/英文输入法、刘海屏与浏览器地址栏行为必须在目标手机继续验收，不能根据模拟测试报告真机通过。
 
 生产更新仍在原目录、原 Compose 项目和原 Caddy 配置下进行：先备份及记录 `scripts/data-inventory.sh` 清单，正式合并后 `git pull --ff-only`、`docker compose up -d --build`、`docker compose exec -T backend npx prisma migrate deploy`，再检查健康和前后数据/文件清单。需重建前后端镜像；不要覆盖现有 `.env` 或改变卷名。
+
+### 连续发送消息
+
+聊天输入不再限制20条待发送消息，也不再显示正常发送时的队列计数横条。发送仍保留有序投递、幂等去重及失败内容/重试提示；网络或服务器变慢时消息实际送达仍取决于连接速度。注册、登录、上传等独立安全限制保持原配置。
