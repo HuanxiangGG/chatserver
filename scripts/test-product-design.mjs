@@ -43,6 +43,18 @@ else {
  fixture={a,b,room,ids};
  if(process.env.DESIGN_SAVE_FIXTURE)await writeFile(process.env.DESIGN_SAVE_FIXTURE,JSON.stringify(fixture),{mode:0o600});
 }
+// WebKit reports an aborted fetch as a native page diagnostic even when the app
+// catches its rejection. Only our explicit POST fault qualifies for that exception.
+async function checkedPage(context) {
+ await context.addInitScript(()=>{window.designUnhandled=0;window.addEventListener('unhandledrejection',()=>window.designUnhandled++);});
+ const page=await context.newPage(),errors=[],networkDiagnostics=[],state={intentionalFailure:false};
+ page.on('pageerror',error=>{
+  if(state.intentionalFailure && /^Fetch API cannot load http/.test(error.name) && /due to access control checks\.$/.test(error.message)) networkDiagnostics.push('Expected aborted-request WebKit fetch diagnostic');
+  else errors.push({name:error.name,message:/^(Cannot|Failed|Unable|ResizeObserver|Unexpected|\w+ is not defined)/.test(error.message)?error.message.slice(0,180):'Uncaught page error'});
+ });
+ const assertClean=async()=>{assert.equal(await page.evaluate(()=>window.designUnhandled),0,'No unhandled promise rejections');assert(networkDiagnostics.every(diagnostic=>diagnostic==='Expected aborted-request WebKit fetch diagnostic'),'Only native fault-injection diagnostics may be classified as expected');assert.deepEqual(errors,[]);};
+ return {page,state,networkDiagnostics,assertClean};
+}
 const results=[];
 for(const [engine,type] of Object.entries({chromium,webkit})) {
  const browser=await type.launch();
@@ -52,10 +64,10 @@ for(const [engine,type] of Object.entries({chromium,webkit})) {
    const context=await browser.newContext({viewport:{width,height},isMobile:width<640,hasTouch:width<640});
    await context.addInitScript(({height,width})=>{const v=new EventTarget();Object.assign(v,{height,width,offsetTop:0,scale:1});Object.defineProperty(window,'visualViewport',{value:v,configurable:true});window.designKeyboard=(h)=>{v.height=h;v.dispatchEvent(new Event('resize'));};},{height,width});
    const split=fixture.a.cookie.indexOf('=');await context.addCookies([{name:fixture.a.cookie.slice(0,split),value:fixture.a.cookie.slice(split+1),url:base.origin,httpOnly:true,sameSite:'Lax'}]);
-   const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push({name:error.name,message:/^(Cannot|Failed|Unable|ResizeObserver|Unexpected|\w+ is not defined)/.test(error.message)?error.message.slice(0,180):'Uncaught page error'}));
+   const {page,state,networkDiagnostics,assertClean}=await checkedPage(context);
    await page.goto(`${base.origin}/chat/${fixture.room}`);const input=page.locator('.composer textarea');await input.waitFor();await page.waitForFunction(()=>document.querySelector('.connection-hidden'));
    await page.locator('.attachment-thumbnail img').last().waitFor();await page.locator('.attachment-thumbnail img').last().evaluate(async img=>{if(!img.complete)await new Promise(resolve=>img.addEventListener('load',resolve,{once:true}));});assert(await page.locator('.attachment-thumbnail img').last().evaluate(img=>img.naturalWidth>0),'Uploaded image must actually decode');
-   const failed='照片稍后再传给你';await page.route('**/api/conversations/*/messages',route=>route.request().method()==='POST'?route.abort('failed'):route.continue());await input.fill(failed);await input.press('Enter');
+   const failed='照片稍后再传给你';await page.route('**/api/conversations/*/messages',route=>{if(route.request().method()!=='POST')return route.continue();state.intentionalFailure=true;return route.abort('failed');});await input.fill(failed);await input.press('Enter');
    const retry=page.locator('.outbox-status button');try { await retry.waitFor({timeout:10000}); } catch (error) { await page.screenshot({path:new URL(`${engine}-${name}-failure.png`,output).pathname}); console.log({engine,name,failed:await page.locator('.form-error,.toast').count()}); throw error; }
    await page.locator('.messages-scroll').evaluate(el=>{el.scrollTop=el.scrollHeight;});await input.focus();
    await page.screenshot({path:new URL(`${engine}-${name}-${phase}.png`,output).pathname});
@@ -75,12 +87,12 @@ for(const [engine,type] of Object.entries({chromium,webkit})) {
     await input.fill('中文选词');await input.evaluate(el=>el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:229,isComposing:true,bubbles:true,cancelable:true})));assert.equal(await input.inputValue(),'中文选词');
     await input.press('Shift+Enter');assert((await input.inputValue()).includes('\n'));
     if(width<640){await page.evaluate(()=>window.designKeyboard(430));await page.waitForFunction(()=>document.documentElement.dataset.keyboard==='open');assert(!await page.locator('.mobile-bottom-nav').isVisible());const r=await input.boundingBox();assert(r.y+r.height<=430);await page.waitForFunction(()=>{const el=document.querySelector('.messages-scroll');return el.scrollHeight-el.clientHeight-el.scrollTop<3;});await page.screenshot({path:new URL(`${engine}-keyboard-${phase}.png`,output).pathname});await input.blur();await page.evaluate(()=>window.designKeyboard(844));await page.waitForFunction(()=>document.documentElement.dataset.keyboard==='closed');}
-    for(const theme of ['light','dark']){await page.goto(`${base.origin}/settings`);await page.locator('.theme-choice').nth(theme==='dark'?0:1).click();await page.waitForFunction(t=>document.documentElement.dataset.theme===t,theme);await page.locator('.sound-settings select').first().selectOption('en');await page.goto(`${base.origin}/chat/${fixture.room}`);await input.waitFor();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:new URL(`${engine}-${name}-${theme}-en.png`,output).pathname});}
+    for(const theme of ['light','dark']){await assertClean();await page.goto(`${base.origin}/settings`);await page.locator('.theme-choice').nth(theme==='dark'?0:1).click();await page.waitForFunction(t=>document.documentElement.dataset.theme===t,theme);await page.locator('.sound-settings select').first().selectOption('en');await assertClean();await page.goto(`${base.origin}/chat/${fixture.room}`);await input.waitFor();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:new URL(`${engine}-${name}-${theme}-en.png`,output).pathname});}
    }
    }
-   assert.deepEqual(errors,[]);results.push({engine,name,phase,passed:true});await context.close();
+   await assertClean();results.push({engine,name,phase,expectedNetworkDiagnostics:networkDiagnostics.length,passed:true});await context.close();
   }
-  const context=await browser.newContext({viewport:{width:1280,height:960}});const page=await context.newPage();await page.goto(`${base.origin}/register`);await page.locator('form').waitFor();await page.screenshot({path:new URL(`${engine}-register-${phase}.png`,output).pathname});if(!before)assert.equal(await page.locator('.auth-story').count(),0);await context.close();
+  const context=await browser.newContext({viewport:{width:1280,height:960}});const {page,assertClean}=await checkedPage(context);await page.goto(`${base.origin}/register`);await page.locator('form').waitFor();await page.screenshot({path:new URL(`${engine}-register-${phase}.png`,output).pathname});if(!before)assert.equal(await page.locator('.auth-story').count(),0);await assertClean();await context.close();
  } finally {await browser.close();}
 }
 await writeFile(new URL(`results-${phase}.json`,output),JSON.stringify(results,null,2));
