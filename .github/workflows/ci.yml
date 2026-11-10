@@ -43,6 +43,10 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - name: Browser viewport and real message acceptance
         run: npm run test:browser:ci
+        env:
+          # Keep real browser registrations separate from API tests' IP quotas.
+          # Both use the normal limiter, in disposable Redis service databases.
+          REDIS_URL: redis://localhost:6379/10
       - uses: actions/upload-artifact@v4
         if: always()
         with:
