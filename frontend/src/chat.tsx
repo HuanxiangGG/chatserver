@@ -289,6 +289,31 @@ export function ChatPage() {
     const input = composer.current; if (!input) return;
     input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
   }, [draft, id, loading]);
+  useEffect(() => {
+    const box = scroll.current;
+    if (!box) return;
+    let frame = 0;
+    // Keyboard/composer changes resize the scroller without creating a message.
+    // Keep the latest message visible only while the reader was following it.
+    const preserveLatest = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (scroll.current === box && followBottom.current) box.scrollTop = box.scrollHeight;
+      });
+    };
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(preserveLatest);
+    observer?.observe(box);
+    // Images may grow after lazy loading without resizing the scroller itself.
+    box.addEventListener('load', preserveLatest, true);
+    window.addEventListener('resize', preserveLatest);
+    return () => {
+      observer?.disconnect();
+      box.removeEventListener('load', preserveLatest, true);
+      window.removeEventListener('resize', preserveLatest);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [id, loading]);
   const latestId = messages.at(-1)?.id;
   useEffect(() => { if (followBottom.current) scrollBottom(); }, [latestId]);
   useEffect(() => {
@@ -396,12 +421,18 @@ export function ChatPage() {
           setUploading(false);
           const result = await api<Message>(`/conversations/${targetId}/messages`, json('POST', pending.prepare(pending.text.trim(), attachmentIds, item.reply?.id)));
           outbox.current.shift();
-          // Only release this submitted snapshot, never the newer editable draft.
-          if (drafts.current.get(targetId) === pending) drafts.current.set(targetId, new MediaDraft());
+          // Normal success owns only its submitted snapshot. An asynchronous
+          // receipt must never rewrite the newer, independently editable draft.
+          const replacement = drafts.current.get(targetId) === pending ? new MediaDraft() : null;
+          if (replacement) drafts.current.set(targetId, replacement);
           pending.clear();
           if (alive.current && activeId.current === targetId) {
             setMessages(old => old.some(m => m.id === result.id) ? old : old.concat(result));
-            setDraft(queue(targetId).text); renderDraft(v => v + 1);
+            // A failed draft may have been restored before another room resumed
+            // its retry. Clear only that exact replacement, rechecking on commit
+            // so later typing always wins over this lower-priority completion.
+            if (replacement) setDraft(current => drafts.current.get(targetId) === replacement && !replacement.text ? '' : current);
+            renderDraft(v => v + 1);
           }
           if (alive.current) void refresh().catch(error => toast((error as Error).message, true));
         } catch (error) {

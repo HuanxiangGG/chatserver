@@ -15,6 +15,7 @@ vi.mock('../../frontend/src/layout', () => ({ CreateGroup: () => null }));
 let root: Root, host: HTMLDivElement, input: HTMLTextAreaElement, cleanupViewport: () => void;
 let visibleHeight = 844, sequence = 0;
 const viewportEvents = new EventTarget();
+const resizeObservers: { callback: ResizeObserverCallback; target?: Element; disconnected: boolean }[] = [];
 const me = { id: 'me', displayName: 'Me', username: 'me' }, peer = { id: 'peer', displayName: 'Peer', username: 'peer' };
 function conversation(id = 'room') { return { id, type: 'DIRECT', canWrite: true, members: [{ userId: me.id, user: me }, { userId: peer.id, user: peer }] }; }
 function message(content: string, id = String(++sequence), room = 'room') { return { id, content, conversationId: room, senderId: peer.id, sender: peer, createdAt: new Date().toISOString(), attachments: [], reads: [] }; }
@@ -27,7 +28,13 @@ async function key(options: KeyboardEventInit = {}) { await act(async () => { in
 function posts() { return mock.api.mock.calls.filter(([path, options]) => path.endsWith('/messages') && options?.method === 'POST'); }
 beforeEach(async () => {
  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
- localStorage.clear(); listeners.clear(); sequence = 0; visibleHeight = 844;
+ localStorage.clear(); listeners.clear(); sequence = 0; visibleHeight = 844; resizeObservers.length = 0;
+ vi.stubGlobal('ResizeObserver', class {
+  record: typeof resizeObservers[number];
+  constructor(callback: ResizeObserverCallback) { this.record = { callback, disconnected: false }; resizeObservers.push(this.record); }
+  observe(target: Element) { this.record.target = target; }
+  disconnect() { this.record.disconnected = true; }
+ });
  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
  Object.defineProperty(window, 'visualViewport', { configurable: true, value: { get height() { return visibleHeight; }, offsetTop: 0, scale: 1, addEventListener: viewportEvents.addEventListener.bind(viewportEvents), removeEventListener: viewportEvents.removeEventListener.bind(viewportEvents) } });
@@ -119,4 +126,60 @@ it('closes only the topmost preview on Escape even when touch focus remains outs
  expect(host.querySelector('textarea')).toBe(input);
  input.focus(); await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
  expect(host.querySelector('[role=dialog]')).toBeNull(); expect(document.activeElement).toBe(details);
+});
+
+it('keeps the latest visible during keyboard and multiline resize, but preserves history reading', async () => {
+ const scroller = host.querySelector('.messages-scroll') as HTMLDivElement;
+ let clientHeight = 546;
+ Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => clientHeight });
+ Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 2000 });
+ scroller.scrollTop = 1454;
+ const observer = resizeObservers.find(item => item.target === scroller && !item.disconnected)!;
+ expect(observer).toBeDefined();
+ async function resized(height: number) {
+  clientHeight = height;
+  await act(async () => { observer.callback([], {} as ResizeObserver); await new Promise(resolve => setTimeout(resolve, 5)); });
+ }
+ // Browser scrollTop is clamped by its real layout; jsdom records the assigned
+ // target, which must be the complete scroll height for bottom anchoring.
+ await resized(247); expect(scroller.scrollTop).toBe(2000);
+ await text(Array.from({ length: 8 }, (_, i) => `line ${i}`).join('\n'));
+ await resized(179); expect(scroller.scrollTop).toBe(2000); expect(document.activeElement).toBe(input);
+ scroller.scrollTop = 120;
+ await act(async () => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+ await resized(100); expect(scroller.scrollTop).toBe(120);
+ await act(async () => scroller.dispatchEvent(new Event('load', { bubbles: false })));
+ await act(async () => new Promise(resolve => setTimeout(resolve, 5)));
+ expect(scroller.scrollTop).toBe(120);
+ await act(async () => (host.querySelector('[data-route=next]') as HTMLButtonElement).click());
+ expect(observer.disconnected).toBe(true);
+});
+
+it('keeps the editable draft when Socket delivery precedes delayed HTTP acknowledgements', async () => {
+ const requests: { content: string; resolve: (value: unknown) => void }[] = [];
+ const previousApi = mock.api.getMockImplementation()!;
+ mock.api.mockImplementation((path: string, options: any) => {
+  if (options?.method === 'POST' && path.endsWith('/messages')) return new Promise(resolve => requests.push({ content: options.body.content, resolve }));
+  return previousApi(path, options);
+ });
+ for (const content of ['queued first', 'queued second', 'queued third']) { await text(content); await key(); }
+ await text('new draft before acknowledgements');
+ for (let index = 0; index < 3; index++) {
+  expect(requests).toHaveLength(index + 1);
+  const request = requests[index]!, delivered = { ...message(request.content, `delayed-${index}`), sender: me, senderId: me.id };
+  await act(async () => { for (const callback of listeners.get('message:new') || []) callback(delivered); });
+  await text(`new draft while acknowledgement ${index} waits`);
+  await act(async () => {
+   request.resolve(delivered);
+   // Let the network continuation queue updates before another input event.
+   await Promise.resolve();
+   Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, `latest editing ${index}`);
+   input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(input.value).toBe(`latest editing ${index}`);
+  expect(document.activeElement).toBe(input); expect(host.querySelector('textarea')).toBe(input);
+  expect(host.querySelectorAll(`#message-delayed-${index}`)).toHaveLength(1);
+ }
+ expect(requests.map(request => request.content)).toEqual(['queued first', 'queued second', 'queued third']);
+ expect(host.querySelector('.outbox-status')).toBeNull();
 });

@@ -28,7 +28,7 @@ function resourcePath(value) {
 function browserErrorText(value) {
  const text = String(value);
  // Only browser/Vite-generated transport diagnostics are safe to include verbatim.
- if (!/^(Failed to load resource|WebSocket|The resource|Load failed|net::ERR_|NS_ERROR_|cancelled|\[vite\])/i.test(text)) return '<console text withheld; inspect location and failed requests>';
+ if (!/^(Viewport|Failed to load resource|WebSocket|The resource|Load failed|net::ERR_|NS_ERROR_|cancelled|\[vite\])/i.test(text)) return '<console text withheld; inspect location and failed requests>';
  return text.replace(/(?:https?|wss?):\/\/[^\s'"<>]+/g, resourcePath)
   .replace(/(?:Bearer\s+)[^\s,;]+/gi, 'Bearer <redacted>')
   .replace(/(?:password|cookie|token|authorization)(?:[=:]\s*)[^\s,;]+/gi, '<sensitive field redacted>').slice(0, 400);
@@ -88,6 +88,14 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
      await page.waitForFunction(() => document.documentElement.dataset.keyboard === 'open');
      assert(!await page.locator('.mobile-bottom-nav').isVisible(), 'Keyboard must hide bottom navigation');
      const keyboardInput = await input.boundingBox(); assert(keyboardInput.y + keyboardInput.height <= 455, 'Keyboard viewport covers composer');
+     await page.waitForFunction(() => { const box = document.querySelector('.messages-scroll'); return box && box.scrollHeight - box.clientHeight - box.scrollTop < 3; }, null, { timeout: 2000 });
+     const keyboardBottom = await page.locator('.messages-scroll').evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop);
+     assert(keyboardBottom < 3, `${engine}: latest message hidden after keyboard resize`);
+     await input.fill('One line\nTwo lines\nThree lines\nFour lines');
+     await page.waitForFunction(() => { const box = document.querySelector('.messages-scroll'); return box && box.scrollHeight - box.clientHeight - box.scrollTop < 3; }, null, { timeout: 2000 });
+     const multilineBottom = await page.locator('.messages-scroll').evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop);
+     assert(multilineBottom < 3, `${engine}: latest message hidden after composer growth`);
+     await input.fill('Unsent next draft');
      await page.screenshot({path:new URL(`${engine}-keyboard-simulated.png`,output).pathname});
      await input.blur(); await page.evaluate(() => window.testKeyboardViewport(844));
      await page.waitForFunction(() => document.documentElement.dataset.keyboard === 'closed');
@@ -103,6 +111,7 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
        await page.locator('.theme-choice').nth(theme === 'dark' ? 0 : 1).click();
        await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, theme);
        assert.equal(await page.locator('html').getAttribute('lang'), language);
+       assert((await page.title()).includes(language === 'en' ? 'Instant conversations' : '\u5373\u65f6\u4ea4\u6d41'), 'Document title did not change language');
        await page.screenshot({path:new URL(`${engine}-settings-${theme}-${language}.png`,output).pathname});
        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Translated settings overflow');
       }
@@ -114,6 +123,7 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
      assert.equal(clipped,0,`${engine}/${width}/${name}: content clipping`);
      await page.screenshot({path:new URL(`${engine}-${width}-${name}.png`,output).pathname});
     }
+    assert.deepEqual(errors, [], `${engine}/${width}: browser errors after settings and secondary pages`);
     } catch (error) {
     await writeFile(new URL(`${engine}-${width}-diagnostics.json`, output), JSON.stringify({ engine, width, errors, requests, completed: results }, null, 2), { mode: 0o600 });
     await page.screenshot({ path: new URL(`${engine}-${width}-failure.png`, output).pathname }).catch(() => {});
