@@ -7,9 +7,9 @@ const base = new URL(process.env.BACKUP_CI_URL || 'http://127.0.0.1:8080');
 assert(process.env.GITHUB_ACTIONS === 'true' && /^\/home\/runner\//.test(process.env.RUNNER_TEMP || ''), 'Backup fixture is GitHub CI-only');
 assert(base.protocol === 'http:' && ['localhost','127.0.0.1'].includes(base.hostname) && base.port === '8080' && base.pathname === '/' && !base.username && !base.password && !base.search && !base.hash, 'Backup fixture only permits the local CI Compose HTTP endpoint');
 const mode = process.argv[2], origin = process.env.APP_ORIGIN;
-const tables = ['User','Conversation','ConversationMember','Message','MessageAttachment','MessageRead','GroupAnnouncement','Report','Server','ServerMember','ServerBan','ServerInvite','ChannelCategory','Channel','ChannelGrant','ServerRole','ServerRoleMember','ChannelRoleOverride','Ticket','Bot','BotInstallation','BotWelcome','BotEvent','AdminAction'];
-const required = ['User','Conversation','ConversationMember','Message','MessageAttachment','MessageRead','Server','ServerMember','ServerInvite','ChannelCategory','Channel','ChannelGrant','ServerRole','ServerRoleMember','ChannelRoleOverride','Ticket','Bot','BotInstallation','BotWelcome','BotEvent','AdminAction'];
-const fixtureKeys = ['fixture:server','fixture:channels','fixture:roles','fixture:role-members','fixture:tickets','fixture:ticket-history','fixture:channel-history','fixture:attachment','fixture:bots','fixture:installations','fixture:welcomes','fixture:events'];
+const tables = ['User','Conversation','ConversationMember','Message','MessageAttachment','MessageRead','GroupAnnouncement','Report','Server','ServerMember','ServerBan','ServerInvite','ChannelCategory','Channel','ChannelGrant','ServerRole','ServerRoleMember','ChannelRoleOverride','Ticket','Bot','BotInstallation','BotWelcome','BotEvent','AdminAction','GuestTicketSession','ChannelRestriction'];
+const required = ['User','Conversation','ConversationMember','Message','MessageAttachment','MessageRead','Server','ServerMember','ServerInvite','ChannelCategory','Channel','ChannelGrant','ServerRole','ServerRoleMember','ChannelRoleOverride','Ticket','Bot','BotInstallation','BotWelcome','BotEvent','AdminAction','GuestTicketSession','ChannelRestriction'];
+const fixtureKeys = ['fixture:server','fixture:channels','fixture:roles','fixture:role-members','fixture:tickets','fixture:ticket-history','fixture:channel-history','fixture:attachment','fixture:bots','fixture:installations','fixture:welcomes','fixture:events','fixture:guest-sessions','fixture:restrictions'];
 async function call(path, method = 'GET', body, person) {
  const label=path.replace(/\/invites\/[a-f0-9]{64}/g,'/invites/<redacted>').split('?')[0];
  let response;
@@ -58,7 +58,11 @@ if(mode==='seed') {
   await call(`/tickets/${proactive.id}`,'PATCH',{status:'CLOSED'},owner);
   await call(`/conversations/${privateChannel.conversationId}/messages`,'POST',{content:'CI archived channel history',clientId:randomUUID()},owner);
   await call(`/servers/${server.id}/channels/${privateChannel.id}`,'DELETE',undefined,owner);
-  console.log(JSON.stringify({serverId:server.id,channelIds:[hall.id,privateChannel.id],roleId:role.id,ticketIds:[ticket.id,proactive.id],conversationIds:[ticket.conversationId,proactive.conversationId],channelConversationIds:[hall.conversationId,privateChannel.conversationId],attachmentId:upload.id,attachmentSha256:createHash('sha256').update(png).digest('hex'),botIds:[builtIn.id,custom.id],installationIds:[installed.id,customInstall.id]}));
+  await call(`/servers/${server.id}/ticket-settings`,'PATCH',{privateTicketsEnabled:true,guestTicketsEnabled:true},owner);
+  const guest=await call(`/guest/${server.id}/tickets`,'POST',{clientId:randomUUID(),displayName:'CI guest',subject:'CI guest ticket',content:'CI guest history',recoveryCode:randomBytes(32).toString('hex')});
+  await call(`/conversations/${guest.ticket.conversationId}/messages`,'POST',{content:'CI owner to guest',clientId:randomUUID()},owner);
+  await call(`/servers/${server.id}/members/${member.user.id}/channel-restrictions`,'PUT',{channelIds:[hall.id],minutes:60,reason:'CI isolated restriction'},owner);
+  console.log(JSON.stringify({serverId:server.id,channelIds:[hall.id,privateChannel.id],roleId:role.id,ticketIds:[ticket.id,proactive.id,guest.ticket.id],conversationIds:[ticket.conversationId,proactive.conversationId,guest.ticket.conversationId],channelConversationIds:[hall.conversationId,privateChannel.conversationId],attachmentId:upload.id,attachmentSha256:createHash('sha256').update(png).digest('hex'),botIds:[builtIn.id,custom.id],installationIds:[installed.id,customInstall.id]}));
  } finally {for(const person of [owner,member,handler])await call('/auth/logout','POST',{},person);}
 } else if(mode==='sql') {
  const data=await fixture(),quote=value=>`'${value}'`,ids=values=>values.map(quote).join(',');
@@ -69,6 +73,8 @@ if(mode==='seed') {
   ['channels','Channel',`"id" IN (${ids(data.channelIds)})`],
   ['roles','ServerRole',`"id"=${quote(data.roleId)}`],
   ['role-members','ServerRoleMember',`"roleId"=${quote(data.roleId)}`],
+  ['guest-sessions','GuestTicketSession',`"ticketId" IN (${ids(data.ticketIds)})`],
+  ['restrictions','ChannelRestriction',`"channelId" IN (${ids(data.channelIds)})`],
   ['tickets','Ticket',`"id" IN (${ids(data.ticketIds)})`],
   ['ticket-history','Message',`"conversationId" IN (${ids(data.conversationIds)})`],
   ['channel-history','Message',`"conversationId" IN (${ids(data.channelConversationIds)})`],
@@ -84,7 +90,7 @@ if(mode==='seed') {
  const counts=new Map(rows.map(([name,count])=>[name,Number(count)]));
  for(const name of [...tables,...fixtureKeys])assert(Number.isSafeInteger(counts.get(name)) && counts.get(name)>=0,`Missing backup count: ${name}`);
  for(const name of [...required,...fixtureKeys])assert(counts.get(name)>0,`Backup model/fixture unexpectedly empty: ${name}`);
- assert(counts.get('fixture:tickets')===2 && counts.get('fixture:ticket-history')>=4 && counts.get('fixture:installations')===2,'Ticket/bot fixture history incomplete');
+ assert(counts.get('fixture:tickets')===3 && counts.get('fixture:ticket-history')>=6 && counts.get('fixture:installations')===2,'Ticket/bot fixture history incomplete');
  console.log('Community, ticket, bot and history backup counts are nonzero.');
 } else if(mode==='attachment-sql') {
  const data=await fixture();console.log(`SELECT "storageKey" FROM "MessageAttachment" WHERE "id"='${data.attachmentId}';`);

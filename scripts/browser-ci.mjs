@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 assert(new URL(process.env.DATABASE_URL || 'postgresql://invalid/unsafe').pathname.endsWith('_test'), 'Browser CI requires a _test database');
 const base = 'http://localhost:5173', children = [], logs = [];
 const testScript = process.env.BROWSER_TEST_SCRIPT || 'scripts/test-browser.mjs';
-assert(['scripts/test-browser.mjs', 'scripts/test-auth-harbor.mjs', 'scripts/test-community-browser.mjs'].includes(testScript), 'Unknown browser suite');
+assert(['scripts/test-browser.mjs', 'scripts/test-auth-harbor.mjs', 'scripts/test-community-browser.mjs', 'scripts/test-community-controls-browser.mjs'].includes(testScript), 'Unknown browser suite');
 mkdirSync('test-results/browser', { recursive: true, mode: 0o700 });
 const env = { ...process.env, NODE_ENV: 'development', APP_ORIGIN: base, COOKIE_SECURE: 'false', TRUST_PROXY: '0', PORT: '3000', UI_TEST_BASE_URL: base };
 function start(name, args, cwd = process.cwd()) {

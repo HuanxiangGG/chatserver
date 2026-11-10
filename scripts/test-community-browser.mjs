@@ -1,19 +1,14 @@
 // Real local community/ticket acceptance. No production targets or seeded fake APIs.
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {deflateSync} from 'node:zlib';
+import {createTestPng as testImage} from './browser-fixtures.mjs';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
 const base=new URL(process.env.UI_TEST_BASE_URL||'http://localhost:5173');
 assert(['localhost','127.0.0.1'].includes(base.hostname)&&base.protocol==='http:');assert(new URL(process.env.DATABASE_URL||'postgresql://invalid/unsafe').pathname.endsWith('_test'));
 const output=new URL(process.env.COMMUNITY_OUTPUT||'../test-results/browser/community/',import.meta.url);await mkdir(output,{recursive:true,mode:0o700});
 async function call(path,method='GET',body,person){const r=await fetch(`${base.origin}/api${path}`,{method,headers:{Origin:base.origin,...(body?{'Content-Type':'application/json'}:{}),...(person?{Cookie:person.cookie,'X-CSRF-Token':person.csrfToken}:{})},body:body?JSON.stringify(body):undefined});assert(r.ok,`${method} ${path}: HTTP ${r.status}`);return {...await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]||person?.cookie};}
-function testImage() {
- const chunk=(name,data)=>{const type=Buffer.from(name),content=Buffer.concat([type,data]);let crc=0xffffffff;for(const byte of content){crc^=byte;for(let bit=0;bit<8;bit++)crc=crc&1?(crc>>>1)^0xedb88320:crc>>>1;}const length=Buffer.alloc(4),sum=Buffer.alloc(4);length.writeUInt32BE(data.length);sum.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([length,content,sum]);};
- const w=480,h=200,header=Buffer.alloc(13);header.writeUInt32BE(w);header.writeUInt32BE(h,4);header[8]=8;header[9]=2;
- const pixels=Buffer.alloc((w*3+1)*h);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*(w*3+1)+1+x*3;const sky=y<110,boat=y>105&&y<133&&x>170+(y-105)&&x<310-(y-105);pixels[i]=boat?219:sky?154:56;pixels[i+1]=boat?176:sky?185:101;pixels[i+2]=boat?116:sky?200:131;}
- return Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
-}
+
 let f;
 if(process.env.COMMUNITY_FIXTURE)f=JSON.parse(await readFile(process.env.COMMUNITY_FIXTURE,'utf8'));
 else{
@@ -68,7 +63,7 @@ for(const [engine,type]of Object.entries({chromium,webkit}).filter(([engine])=>!
  // Navigate back through the actual ticket/queue/channel controls on both sizes.
  await page.locator('.ticket-context > a').click();await page.locator('.ticket-queue header h1').waitFor();
  assert.equal(await page.locator('.ticket-queue header h1').textContent(),'我的工单');assert.equal(await page.locator('.mobile-sidebar-toggle').count(),0,'Ticket back links must not overlap a shell drawer trigger');
- await page.locator('.ticket-queue header .back-link').click();await page.locator(`a[href$="/channels/${f.hall.conversationId}"]:visible`).first().click();await input.waitFor();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await page.locator('.ticket-queue > .back-link').click();await page.locator(`a[href$="/channels/${f.hall.conversationId}"]:visible`).first().click();await input.waitFor();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await visit(op,`${base.origin}/servers/${f.server.id}/settings`);await op.getByRole('button',{name:'以普通成员身份预览',exact:true}).click();await op.locator('.preview-channel').first().waitFor();assert.equal(await op.locator('.preview-channel').filter({hasText:'管理室'}).count(),0);await op.keyboard.press('Escape');
  await op.locator('.community-bot-row').first().getByRole('button',{name:'配置',exact:true}).click();const botForm=op.locator('.community-setting-section form').filter({has:op.locator('input[name=commands]')});await botForm.locator('textarea[name=welcome]').fill('欢迎加入，{name}！');await botForm.getByRole('button',{name:'保存',exact:true}).click();await op.locator('.community-bot-row').first().getByRole('button',{name:'停用',exact:true}).click();await op.locator('.community-bot-row').first().getByRole('button',{name:'启用',exact:true}).click();
  await op.locator('.community-member').filter({hasText:'小林'}).getByRole('button').last().click();await op.getByRole('dialog').getByRole('button',{name:'发起私密工单',exact:true}).click();await op.locator('[role=dialog] input[name=subject]').fill('社区主主动联系');await op.locator('[role=dialog] textarea[name=content]').fill('可以在这里单独回复我。');await op.locator('[role=dialog] form>button').last().click();await op.waitForURL('**/tickets/**/chat/**');await op.locator('.message-content').filter({hasText:'可以在这里单独回复我'}).waitFor();

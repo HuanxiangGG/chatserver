@@ -8,7 +8,7 @@ import { PrismaClient } from "@prisma/client";
 const db = new PrismaClient({log:[]});
 try {
   const counts = {};
-  for (const name of ["user", "conversation", "conversationMember", "message", "messageAttachment", "friendship", "blockedUser", "adminAction"]) counts[name] = await db[name].count();
+  for (const name of ["user", "conversation", "conversationMember", "message", "messageAttachment", "friendship", "blockedUser", "adminAction", "server", "serverMember", "channel", "ticket", "botInstallation", "guestTicketSession", "channelRestriction"]) if (db[name]?.count) counts[name] = await db[name].count();
   console.log(JSON.stringify(counts));
 } finally { await db.$disconnect(); }
 '
