@@ -26,8 +26,10 @@ router.get('/servers/:id/tickets', asyncRoute(async (req, res) => {
   const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
   const where: Prisma.TicketWhereInput = { serverId, ...(query.status ? { status: query.status } : {}), ...(server.ownerId === req.user.id ? {} : { OR: [{ memberId: req.user.id }, { assigneeId: req.user.id }] }) };
   if (query.q) {
+    const numericQuery = /^#?\d+$/.test(query.q) ? Number(query.q.replace('#', '')) : NaN;
+    const numberFilter = Number.isSafeInteger(numericQuery) && numericQuery >= 1 && numericQuery <= 2147483647 ? [{ number: numericQuery }] : [];
     const people = await prisma.user.findMany({ where: { OR: [{ displayName: { contains: query.q, mode: 'insensitive' } }, { username: { contains: query.q, mode: 'insensitive' } }] }, select: { id: true }, take: 100 });
-    where.AND = [{ OR: [{ subject: { contains: query.q, mode: 'insensitive' } }, { id: { startsWith: query.q } }, ...( /^#?\d+$/.test(query.q) ? [{ number: Number(query.q.replace('#','')) }] : []), { memberId: { in: people.map(p => p.id) } }, { assigneeId: { in: people.map(p => p.id) } }] }];
+    where.AND = [{ OR: [{ subject: { contains: query.q, mode: 'insensitive' } }, { id: { startsWith: query.q } }, ...numberFilter, { memberId: { in: people.map(p => p.id) } }, { assigneeId: { in: people.map(p => p.id) } }] }];
   }
   if (query.cursor) {
     const c = await prisma.ticket.findFirst({ where: { AND: [where, { id: query.cursor }] } });

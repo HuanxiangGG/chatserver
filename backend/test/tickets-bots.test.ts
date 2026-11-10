@@ -160,3 +160,20 @@ it('cannot turn installBots permission into access to hidden channels or read-on
  const valid=await api(b).post(`/servers/${s1}/bots`,{...body,channelIds:[hall.id]});expect(valid.status,JSON.stringify(valid.body)).toBe(201);
  expect((await api(owner).delete(`/servers/${s1}/bots/${valid.body.id}`)).status).toBe(200);
 });
+
+it('keeps oversized numeric ticket queries as text without overflowing Prisma Int or bypassing privacy',async()=>{
+ const subject='9'.repeat(100);
+ const created=await api(a).post(`/servers/${s1}/tickets`,{clientId:randomUUID(),subject,category:'编号查询',content:'仅当事人可见'});
+ expect(created.status).toBe(201);
+ const ownerResult=await api(owner).get(`/servers/${s1}/tickets?q=${subject}`);
+ expect(ownerResult.status).toBe(200);expect(ownerResult.body.tickets.map((t:any)=>t.id)).toContain(created.body.id);
+ const memberResult=await api(a).get(`/servers/${s1}/tickets?q=${subject}`);
+ expect(memberResult.status).toBe(200);expect(memberResult.body.tickets.map((t:any)=>t.id)).toContain(created.body.id);
+ const unrelated=await api(b).get(`/servers/${s1}/tickets?q=${subject}`);
+ expect(unrelated.status).toBe(200);expect(unrelated.body.tickets).toEqual([]);
+ for(const q of ['0','2147483647','2147483648','9007199254740992','#'+'9'.repeat(99)]){
+  const result=await api(owner).get(`/servers/${s1}/tickets?q=${encodeURIComponent(q)}`);expect(result.status,q).toBe(200);
+ }
+ const exact=await api(owner).get(`/servers/${s1}/tickets?q=${encodeURIComponent('#'+created.body.number)}`);
+ expect(exact.status).toBe(200);expect(exact.body.tickets.map((t:any)=>t.id)).toEqual([created.body.id]);
+});
