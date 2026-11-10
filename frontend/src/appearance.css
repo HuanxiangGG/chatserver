@@ -17,7 +17,7 @@
   min-height: 44px;
   padding: 10px;
   border: 1px solid var(--border);
-  border-radius: 15px;
+  border-radius: 6px;
   background: var(--soft);
   color: var(--text);
   text-align: left;
@@ -30,7 +30,6 @@
 .appearance-settings .theme-choice.selected {
   border-color: var(--accent);
   background: var(--accent-soft);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 .appearance-settings .theme-choice:focus-visible {
   outline: 3px solid var(--accent);

@@ -46,7 +46,6 @@ export function SettingsPage() {
     <div className="page-scroll">
       <div className="page-content settings-page">
         <PageHeading
-          eyebrow={tr('screen213')}
           title={tr('screen349')}
           description={tr('screen367')}
         />

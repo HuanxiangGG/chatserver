@@ -111,24 +111,8 @@ export function AuthPage({
   return (
     <main className="auth-screen">
       <div className="auth-layout">
-      <section className="auth-story">
-        <Brand />
-        <div className="story-content">
-          <h1>{t('auth14')}</h1>
-          <p>{t('auth16')}</p>
-        </div>
-        <footer>
-          <ShieldCheck size={16} />
-          <span>{t('auth21')}</span>
-          <span className="story-year">
-            © {new Date().getFullYear()} {t('authCopyright')}
-          </span>
-        </footer>
-      </section>
       <section className="auth-form-panel">
-        <div className="auth-mobile-brand">
-          <Brand />
-        </div>
+        <div className="auth-brand"><Brand /></div>
         <div className="auth-toolbar"><label className="auth-language">{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t('chinese')}</option><option value="en">{t('english')}</option></select></label><button type="button" className="btn btn-secondary auth-appearance" onClick={() => setAppearanceOpen(true)}><Palette size={16}/>{t('appearanceTitle')}</button></div>
         <div className="auth-form-wrap">
           <h2>{titles[mode]}</h2>

@@ -70,7 +70,6 @@ export function FriendsPage() {
     <div className="page-scroll">
       <div className="page-content">
         <PageHeading
-          eyebrow={tr('screen213')}
           title={tr('screen341')}
           description={tr('screen517')}
           action={
@@ -277,7 +276,6 @@ export function FriendsPage() {
               }}
             >
               <div>
-                <span className="eyebrow">{tr('helloKicker')}</span>
                 <h2>{tr('screen540')}</h2>
                 <p>{tr('screen541')}</p>
               </div>
@@ -440,17 +438,12 @@ export function ProfilePage() {
           <ArrowLeft size={16} />
           {tr('screen555')}</Link>
         <PageHeading
-          eyebrow={tr('screen213')}
           title={own ? tr('screen351') : tr('screen556')}
           description={
             own ? tr('screen557') : tr('screen558')
           }
         />
         <div className="profile-card">
-          <div className="profile-cover">
-            <div />
-            <span>{tr('stayConnected')}</span>
-          </div>
           <div className="profile-card-content">
             <div className="profile-avatar-row">
               <div className="editable-avatar">

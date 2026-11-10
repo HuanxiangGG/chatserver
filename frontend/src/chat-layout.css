@@ -15,11 +15,11 @@
   position: relative;
 }
 .chat-header {
-  min-height: 88px;
+  min-height: 72px;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 16px 26px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   flex: none;
@@ -78,19 +78,6 @@
   background: none;
   box-shadow: none;
 }
-.chat-security-note {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 9px;
-  padding: 10px;
-  flex: none;
-}
-.chat-security-note svg {
-  color: var(--success);
-}
 .messages-scroll {
   flex: 1;
   min-height: 0;
@@ -103,15 +90,17 @@
   overflow-anchor: none;
 }
 .messages-scroll > div[id] {
-  padding-block: calc(var(--message-gap) / 2);
+  padding-block: 0;
+  margin-top: var(--message-gap);
 }
+.messages-scroll > div.message-continuation[id] { margin-top: 3px; }
 .date-divider {
   display: flex;
   align-items: center;
   gap: 16px;
   color: var(--muted);
-  font-size: 10px;
-  margin: 14px 0 24px;
+  font-size: 11px;
+  margin: 10px 0 16px;
 }
 .date-divider:before,
 .date-divider:after {
@@ -150,7 +139,7 @@
 }
 .message-avatar {
   flex: none;
-  margin-top: 20px;
+  margin-top: 0;
 }
 .message-column {
   min-width: 0;
@@ -161,9 +150,9 @@
   align-items: center;
   gap: 10px;
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--subtle);
-  min-height: 17px;
+  min-height: 18px;
 }
 .message-meta strong {
   font-weight: 550;
@@ -173,20 +162,20 @@
   white-space: nowrap;
 }
 .message-meta time {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
 }
 .message-body {
   border: 1px solid var(--border);
   border-radius: 3px 10px 10px 10px;
   background: var(--bubble);
-  padding: 12px 16px;
+  padding: 8px 12px;
   min-width: 0;
   box-shadow: none;
 }
 .message-content {
   font-size: var(--message-font-size);
-  line-height: 1.7;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -196,7 +185,7 @@
   gap: 9px;
   align-items: center;
   margin-top: 6px;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   min-height: 15px;
 }
@@ -228,7 +217,7 @@
   gap: 2px;
   position: relative;
   opacity: 0;
-  margin-top: 22px;
+  margin-top: 0;
   flex: none;
 }
 .message-row:hover .message-tools,
@@ -266,6 +255,7 @@
   right: auto;
   left: 0;
 }
+.message-menu-time { display: block; padding: 8px 10px; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); }
 .message-menu button {
   display: flex;
   align-items: center;
@@ -435,87 +425,44 @@
   flex-direction: column;
 }
 .composer {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: end;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: none;
+  border-radius: 8px;
   position: relative;
   min-width: 0;
   flex: none;
+  padding: 3px;
 }
-.composer:focus-within {
-  border-color: var(--accent);
-  box-shadow: none;
-}
+.composer:focus-within { border-color: var(--accent); }
 .composer > textarea {
-  width: 100%;
-  min-width: 0;
-  display: block;
-  min-height: 48px;
-  max-height: min(140px, 20svh);
-  padding: 14px 16px 6px;
-  resize: none;
-  line-height: 1.55;
-  font-size: var(--message-font-size);
-  border: 0 !important;
-  border-radius: 10px 10px 0 0;
-  box-shadow: none !important;
-  outline: none !important;
-  background: none;
-  overflow-y: auto;
+  width: 100%; min-width: 0; display: block; min-height: 44px;
+  max-height: min(140px, 20svh); padding: 10px 6px;
+  resize: none; line-height: 24px; font-size: var(--message-font-size);
+  border: 0 !important; border-radius: 0; box-shadow: none !important;
+  outline: none !important; background: none; overflow-y: auto;
   overscroll-behavior: contain;
 }
-.composer-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 8px 8px;
-}
-.composer-toolbar > div {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  min-width: 0;
-}
-.composer-file-hint {
-  color: var(--muted);
-  font-size: 9px;
-  margin-left: 6px;
-}
-.send-hint {
-  font-size: 9px;
-  color: var(--muted);
-  margin-right: 9px;
-}
-.send-hint kbd {
-  margin-left: 3px;
-}
-.send-button {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
-  border-radius: 13px;
-  background: var(--accent);
-  color: var(--app);
-  display: grid;
-  place-items: center;
-}
-.send-button:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-.send-button:disabled {
-  background: var(--soft-2);
-  color: var(--muted);
-  opacity: 1;
-}
-.composer-footnote {
-  display: flex;
-  justify-content: space-between;
-  font-size: 9px;
-  color: var(--muted);
-  padding: 9px 4px 0;
-}
+.composer-toolbar { display: flex; align-items: center; gap: 0; min-width: 0; padding: 0; }
+.composer-toolbar .icon-btn, .send-button { width: 44px; height: 44px; min-width: 44px; }
+.send-button { display: grid; place-items: center; border-radius: 6px; color: var(--accent); background: transparent; }
+.send-button:hover:not(:disabled) { background: var(--accent-soft); }
+.send-button:disabled { background: transparent; color: var(--muted); opacity: .55; }
+.composer-footnote { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); padding: 6px 4px 0; }
+.composer-menu-label, .composer-menu-hint { grid-column: 1 / -1; color: var(--muted); font-size: 12px; padding: 4px; display: flex; align-items: center; gap: 6px; }
+.grouped { padding-inline-start: 47px; }
+.own.grouped { padding-inline-start: 0; padding-inline-end: 47px; }
+.message-exact-time { position: absolute; left: 0; top: 10px; font-size: 10px; line-height: 18px; color: var(--muted); opacity: 0; }
+.own .message-exact-time { left: auto; right: 0; }
+.message-row:hover .message-exact-time, .message-exact-time:focus { opacity: 1; }
+.pending-content { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.pending-message { margin-top: var(--message-gap); }
+.pending-file { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.pending-status { text-align: right; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.pending-status .btn { color: var(--danger); min-height: 32px; padding: 4px 0; font-size: 12px; }
+.pending-status .btn:hover { text-decoration: underline; }
 .composer-reply {
   display: flex;
   align-items: center;
@@ -558,10 +505,6 @@
 .upload-progress {
   padding: 6px;
   font-size: 10px;
-  flex: none;
-}
-.outbox-status {
-  max-height: 70px;
   flex: none;
 }
 .emoji-palette {

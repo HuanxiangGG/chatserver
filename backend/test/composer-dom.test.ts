@@ -42,10 +42,11 @@ it('keeps the same enabled focused textarea through ten successful sends without
   }
   const posts = mock.api.mock.calls.filter(([path, options]) => path.endsWith('/messages') && options?.method === 'POST');
   expect(posts).toHaveLength(10); expect(new Set(posts.map(([, o]) => o.body.clientId)).size).toBe(10);
+  expect(host.querySelectorAll('.message-meta')).toHaveLength(1); expect(host.querySelectorAll('.message-receipt')).toHaveLength(1);
 });
 it('retains focus and draft on failure and permits a successful retry', async () => {
   await text('keep this'); mock.api.mockRejectedValueOnce(new Error('offline')); await enter();
-  expect(textarea.value).toBe('keep this'); expect(document.activeElement).toBe(textarea); expect(mock.toast).toHaveBeenCalled();
+  expect(textarea.value).toBe('keep this'); expect(document.activeElement).toBe(textarea); expect(mock.toast).not.toHaveBeenCalled(); expect(host.querySelector('.messages-scroll .outbox-status')?.textContent).toContain('发送失败'); expect(textarea.readOnly).toBe(false);
   await enter(); expect(textarea.value).toBe(''); expect(document.activeElement).toBe(textarea);
 });
 it('keeps focus while pending, prevents duplicate submits, and does not steal focus after deliberate navigation', async () => {
@@ -119,4 +120,25 @@ it('accepts forty rapid drafts beyond the former cap and keeps pending delivery 
   expect(new Set(posts.map(([, options]) => options.body.clientId)).size).toBe(40);
   expect(textarea.value).toBe('next editable draft');
   expect(host.querySelector('.outbox-status')).toBeNull();
+});
+
+it('keeps a failed message beside its retry action while allowing the restored draft to be edited', async () => {
+  await text('failed snapshot'); mock.api.mockRejectedValueOnce(new Error('offline')); await enter();
+  const failure = host.querySelector('.messages-scroll .outbox-status')!;
+  expect(failure.textContent).toContain('failed snapshot'); expect(failure.textContent).toContain('发送失败');
+  expect(textarea.readOnly).toBe(false); await text('new editable draft');
+  await act(async () => (failure.querySelector('button') as HTMLButtonElement).click());
+  expect(textarea.value).toBe('new editable draft'); expect(host.querySelector('.outbox-status')).toBeNull();
+  const posts = mock.api.mock.calls.filter(([path, options]) => path.endsWith('/messages') && options?.method === 'POST');
+  expect(posts[0]![1].body.clientId).toBe(posts[1]![1].body.clientId);
+  expect(posts[1]![1].body.content).toBe('failed snapshot');
+});
+
+it('inserts emoji from the composer menu and closes it with Escape without replacing the input', async () => {
+ const more = host.querySelector('.composer-actions button[type=button]') as HTMLButtonElement;
+ await text('hello'); await act(async () => more.click());
+ const emoji = host.querySelector('.emoji-palette button') as HTMLButtonElement;
+ await act(async () => emoji.click()); expect(textarea.value).toBe('hello😀'); expect(document.activeElement).toBe(textarea);
+ await act(async () => more.click()); await act(async () => document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
+ expect(host.querySelector('.emoji-palette')).toBeNull(); expect(host.querySelector('textarea')).toBe(textarea); expect(document.activeElement).toBe(textarea);
 });

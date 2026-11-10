@@ -21,5 +21,5 @@ it('updates mounted UI, community roles and language persistence without remount
 });
 it('formats variables and localizes every documented API error in both languages',()=>{
  for(const language of ['zh-CN','en'] as const){setLanguage(language);for(const [message,key]of Object.entries(apiKeys)){expect(localizeApiError(message)).toBe(dictionaries[language][key as keyof typeof dictionaries.en]);}}
- setLanguage('en');expect(translate('outboxFailed',{count:3})).toContain('3');expect(localizeApiError('字段校验失败：用户名：格式或长度不符合要求')).toBe(dictionaries.en.apiFieldError);
+ setLanguage('en');expect(translate('navUnreadCount',{count:3})).toContain('3');expect(localizeApiError('字段校验失败：用户名：格式或长度不符合要求')).toBe(dictionaries.en.apiFieldError);
 });

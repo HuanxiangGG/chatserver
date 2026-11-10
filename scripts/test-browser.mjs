@@ -137,3 +137,5 @@ await writeFile(new URL('matrix.json', output), JSON.stringify(results, null, 2)
 console.log(`Browser acceptance passed: ${results.length} Chromium/WebKit viewports; ordered real Socket delivery and composer focus passed in both engines.`);
 
 await import("./test-auth-layout.mjs");
+
+await import("./test-product-design.mjs");

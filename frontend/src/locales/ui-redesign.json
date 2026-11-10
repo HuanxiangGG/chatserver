@@ -7,7 +7,11 @@
     "uiMuted": "你已被禁言，仍可查看聊天记录",
     "uiChatLoading": "正在载入会话",
     "uiDocumentTitle": "泊岸 · 聊天",
-    "uiDocumentDescription": "与好友私聊、创建群组、分享消息和文件。"
+    "uiDocumentDescription": "与好友私聊、创建群组、分享消息和文件。",
+    "uiPendingMessage": "待发送消息",
+    "uiSendFailed": "发送失败 · 重试",
+    "uiSending": "正在发送…",
+    "uiComposerMore": "表情和附件说明"
   },
   "en": {
     "uiInfoFiles": "Shared files",
@@ -17,6 +21,10 @@
     "uiMuted": "You are muted. You can still read messages.",
     "uiChatLoading": "Loading conversation",
     "uiDocumentTitle": "Harbor · Messages",
-    "uiDocumentDescription": "Message friends, create groups and share files."
+    "uiDocumentDescription": "Message friends, create groups and share files.",
+    "uiPendingMessage": "Pending message",
+    "uiSendFailed": "Couldn't send. Retry",
+    "uiSending": "Sending…",
+    "uiComposerMore": "Emoji and attachment help"
   }
 }

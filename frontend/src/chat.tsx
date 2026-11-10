@@ -1,3 +1,4 @@
+import { continuesMessageGroup } from './message-grouping';
 import { getLanguage, translate as tr, useLanguage } from './i18n';
 import { ReportButton } from './reports';
 import { ForwardDialog } from './forward-dialog';
@@ -112,14 +113,27 @@ export function ChatPage() {
     activeId = useRef(id),
     readIds = useRef(new Set<string>()),
     followBottom = useRef(true),
+    viewportChanging = useRef(false),
     task = useTask(),
     navigate = useNavigate();
   const drafts = useRef(new Map<string, MediaDraft>());
   const sendLock = useRef(false);
-  const outbox = useRef<{ conversationId: string; pending: MediaDraft; reply: Message | null }[]>([]);
+  const outbox = useRef<{ conversationId: string; pending: MediaDraft; reply: Message | null; key: string; createdAt: string; error: string | null }[]>([]);
+  const acceptedIds = useRef(new Set<string>());
+  const restoredDraft = useRef(new Map<string, { key: string; text: string }>());
   const alive = useRef(true);
-  const [failedSend, setFailedSend] = useState(false);
   useEffect(() => { alive.current = true; return () => { alive.current = false; if (!sendLock.current) { outbox.current.forEach(item => item.pending.clear()); outbox.current = []; } }; }, []);
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Element && !event.target.closest('.emoji-palette,.composer-actions')) setEmojiOpen(false);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); setEmojiOpen(false); composer.current?.focus({preventScroll:true}); }
+    };
+    document.addEventListener('pointerdown', closeOutside); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', escape); };
+  }, [emojiOpen]);
   const [sendShortcut] = useSendShortcut();
   const t = useSoundText();
   const [contextView, setContextView] = useState(false);
@@ -224,6 +238,7 @@ export function ChatPage() {
     if (!socket || !id) return;
     const onMessage = (message: Message) => {
       if (message.conversationId !== id) return;
+      if (message.senderId === user!.id && message.clientId) acceptedIds.current.add(message.clientId);
       setMessages((old) =>
         old.some((m) => m.id === message.id) ? old : old.concat(message),
       );
@@ -290,7 +305,18 @@ export function ChatPage() {
   useEffect(() => {
     const box = scroll.current;
     if (!box) return;
-    let frame = 0;
+    let frame = 0, viewportFrame = 0, settledFrame = 0;
+    const viewport = window.visualViewport;
+    // Scroll events caused by keyboard geometry are not an intent to read history.
+    const onViewportChange = () => {
+      viewportChanging.current = true;
+      cancelAnimationFrame(viewportFrame); cancelAnimationFrame(settledFrame);
+      viewportFrame = requestAnimationFrame(() => { settledFrame = requestAnimationFrame(() => {
+        if (scroll.current === box && followBottom.current) box.scrollTop = box.scrollHeight;
+        viewportChanging.current = false;
+      }); });
+    };
+    viewport?.addEventListener('resize', onViewportChange);
     // Keyboard/composer changes resize the scroller without creating a message.
     // Keep the latest message visible only while the reader was following it.
     const preserveLatest = () => {
@@ -307,11 +333,15 @@ export function ChatPage() {
     window.addEventListener('resize', preserveLatest);
     return () => {
       observer?.disconnect();
+      viewport?.removeEventListener('resize', onViewportChange);
+      cancelAnimationFrame(viewportFrame); cancelAnimationFrame(settledFrame); viewportChanging.current = false;
       box.removeEventListener('load', preserveLatest, true);
       window.removeEventListener('resize', preserveLatest);
       if (frame) cancelAnimationFrame(frame);
     };
   }, [id, loading]);
+  const pendingLayout = outbox.current.filter(item => item.conversationId === id).map(item => item.key + (item.error ? ':failed' : '')).join(',');
+  useEffect(() => { if (followBottom.current) scrollBottom(); }, [pendingLayout]);
   const latestId = messages.at(-1)?.id;
   useEffect(() => { if (followBottom.current) scrollBottom(); }, [latestId]);
   useEffect(() => {
@@ -406,10 +436,11 @@ export function ChatPage() {
   }
   async function drainOutbox() {
     if (sendLock.current || !outbox.current.length) return;
-    sendLock.current = true; setSending(true); setFailedSend(false);
+    sendLock.current = true; setSending(true);
     try {
       while (outbox.current.length && alive.current) {
         const item = outbox.current[0]!, targetId = item.conversationId, pending = item.pending;
+        item.error = null; renderDraft(v => v + 1);
         try {
           setUploading(!!pending.items.length);
           const attachmentIds = await pending.upload(chosen => {
@@ -418,30 +449,31 @@ export function ChatPage() {
           });
           setUploading(false);
           const result = await api<Message>(`/conversations/${targetId}/messages`, json('POST', pending.prepare(pending.text.trim(), attachmentIds, item.reply?.id)));
+          acceptedIds.current.add(result.clientId || pending.clientId);
           outbox.current.shift();
-          // Normal success owns only its submitted snapshot. An asynchronous
-          // receipt must never rewrite the newer, independently editable draft.
-          const replacement = drafts.current.get(targetId) === pending ? new MediaDraft() : null;
-          if (replacement) drafts.current.set(targetId, replacement);
+          // Acknowledgements never write to the independently editable draft.
           pending.clear();
           if (alive.current && activeId.current === targetId) {
             setMessages(old => old.some(m => m.id === result.id) ? old : old.concat(result));
-            // A failed draft may have been restored before another room resumed
-            // its retry. Clear only that exact replacement, rechecking on commit
-            // so later typing always wins over this lower-priority completion.
-            if (replacement) setDraft(current => drafts.current.get(targetId) === replacement && !replacement.text ? '' : current);
             renderDraft(v => v + 1);
           }
           if (alive.current) void refresh().catch(error => toast((error as Error).message, true));
         } catch (error) {
+          // A Socket receipt can confirm delivery before an HTTP response is lost.
+          if (acceptedIds.current.has(pending.delivery?.clientId || pending.clientId)) { outbox.current.shift(); pending.clear(); continue; }
+          item.error = error instanceof Error ? error.message : tr('screen408');
           if (error instanceof ApiError && error.status >= 400 && error.status < 500) pending.rejected();
           const current = drafts.current.get(targetId);
           // A failed snapshot returns to the input if it would not replace new typing.
           if (!current?.text && !current?.items.length) {
-            drafts.current.set(targetId, pending);
-            if (alive.current && activeId.current === targetId) { setDraft(pending.text); setReply(item.reply); }
+            // The failed delivery stays immutable in the outbox. The editable
+            // draft is a separate object, so a lost acknowledgement cannot lock typing.
+            const restored = new MediaDraft(); restored.text = pending.text;
+            drafts.current.set(targetId, restored);
+            restoredDraft.current.set(targetId, {key:item.key,text:pending.text});
+            if (alive.current && activeId.current === targetId) { setDraft(restored.text); setReply(item.reply); }
           }
-          if (alive.current) { setFailedSend(true); renderDraft(v => v + 1); toast((error as Error).message + tr('screen425'), true); }
+          if (alive.current) renderDraft(v => v + 1);
           break;
         }
       }
@@ -455,10 +487,15 @@ export function ChatPage() {
     e?.preventDefault();
     if (conversation?.canWrite === false || !id) return;
     const pending = queue();
+    const restored = restoredDraft.current.get(id);
+    if (restored && pending.text === restored.text && !pending.items.length && outbox.current.some(item => item.key === restored.key)) {
+      restoredDraft.current.delete(id); drafts.current.set(id, new MediaDraft()); setDraft(''); setReply(null); void drainOutbox(); return;
+    }
+    restoredDraft.current.delete(id);
     if (!pending.text.trim() && !pending.items.length) return;
     const existing = outbox.current.find(item => item.pending === pending);
     if (existing) existing.reply = reply;
-    else outbox.current.push({ conversationId: id, pending, reply });
+    else outbox.current.push({ conversationId: id, pending, reply, key: pending.clientId, createdAt: new Date().toISOString(), error: null });
     drafts.current.set(id, new MediaDraft());
     setDraft(''); setReply(null); renderDraft(v => v + 1);
     typingReporter.current?.stop();
@@ -565,14 +602,11 @@ export function ChatPage() {
         {conversation.mute && !writable && <p className="mute-banner" role="status">{tr('uiMuted')}</p>}
         {contextView && <button className="btn btn-secondary" onClick={() => { setContextView(false); void load(); }}>{t("backLatest")}</button>}
         {selecting && <button type="button" className="btn btn-primary" disabled={!forwardIds.length} onClick={() => setForwardOpen(true)}>{t("forwardCount", { count: forwardIds.length })}</button>}
-        <div className="chat-security-note">
-          <ShieldCheck size={12} />
-          <span>{tr('screen447')}</span>
-        </div>
         <div
           className="messages-scroll"
           ref={scroll}
           onScroll={() => {
+            if (viewportChanging.current) return;
             const box = scroll.current;
             if (box) { followBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 160; setAtBottom(followBottom.current); }
             if (
@@ -598,25 +632,7 @@ export function ChatPage() {
               {tr('screen448')}</button>
           )}
           {messages.length === 0 ? (
-            <div className="conversation-start">
-              {isChannel ? <div className="channel-symbol channel-symbol-large"><Hash size={40} /></div> : <Avatar user={other} group={isGroup} size="xl" />}
-              <h2>
-                {isGroup ? tr('screen449') : tr('screen450', {v0: title})}
-              </h2>
-              <p>
-                {isGroup
-                  ? tr('screen451')
-                  : tr('screen452')}
-              </p>
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  updateDraft(tr('screen453'));
-                  composer.current?.focus();
-                }}
-              >
-                {tr('screen454')}</button>
-            </div>
+            <div className="conversation-start"><p>{tr('screen449')}</p></div>
           ) : (
             messages.map((m, index) => {
               const previous = messages[index - 1],
@@ -625,7 +641,7 @@ export function ChatPage() {
                   new Date(previous.createdAt).toDateString() !==
                     new Date(m.createdAt).toDateString();
               return (
-                <div key={m.id} id={`message-${m.id}`}>
+                <div key={m.id} id={`message-${m.id}`} className={continuesMessageGroup(previous, m, m.id === firstUnreadId) ? "message-continuation" : "message-group-start"}>
                   {selecting && !m.retractedAt && <label className="forward-select"><input type="checkbox" checked={forwardIds.includes(m.id)} disabled={!forwardIds.includes(m.id) && forwardIds.length >= 20} onChange={e => setForwardIds(old => e.target.checked ? [...old, m.id] : old.filter(id => id !== m.id))} />{t("forwardSelected")}</label>}
                   {showDate && (
                     <div className="date-divider">
@@ -643,6 +659,8 @@ export function ChatPage() {
                     message={m}
                     conversation={conversation}
                     own={m.senderId === user!.id}
+                    grouped={continuesMessageGroup(previous, m, m.id === firstUnreadId)}
+                    showReceipt={!messages[index + 1] || !continuesMessageGroup(m, messages[index + 1]!, messages[index + 1]?.id === firstUnreadId)}
                     onLocate={locateMessage}
                     onForward={() => { setForwardIds([m.id]); setForwardOpen(true); }}
                     onReply={() => {
@@ -688,6 +706,18 @@ export function ChatPage() {
               );
             })
           )}
+          {outbox.current.filter(item => item.conversationId === id && !acceptedIds.current.has(item.pending.delivery?.clientId || item.pending.clientId)).map(item => (
+            <article key={item.key} className={`message-row own pending-message ${item.error ? 'outbox-status' : ''}`} aria-label={tr('uiPendingMessage')}>
+              <div className="message-column">
+                <div className="message-body"><p className="pending-content">{item.pending.delivery?.content || item.pending.text}</p>{item.pending.items.map(attachment => <span className="pending-file" key={attachment.id}><File size={14} />{attachment.file.name}</span>)}</div>
+                <div className="pending-status" role="status">{item.error ? <button type="button" className="btn" title={item.error} onPointerDown={e => { if (document.activeElement === composer.current) e.preventDefault(); }} onClick={() => {
+                  const restored = restoredDraft.current.get(item.conversationId), current = drafts.current.get(item.conversationId);
+                  if (restored?.key === item.key && current?.text === restored.text && !current.items.length) { drafts.current.set(item.conversationId, new MediaDraft()); restoredDraft.current.delete(item.conversationId); setDraft(''); setReply(null); }
+                  composer.current?.focus({preventScroll:true}); void drainOutbox();
+                }}>{tr('uiSendFailed')}</button> : <span>{tr('uiSending')}</span>}</div>
+              </div>
+            </article>
+          ))}
           <div ref={end} />
         </div>
         {!atBottom && !contextView && <button type="button" className="btn btn-secondary jump-latest" onClick={() => { followBottom.current = true; setAtBottom(true); scrollBottom(); }}><ChevronDown size={16} />{t("backLatest")}</button>}
@@ -729,21 +759,15 @@ export function ChatPage() {
               <button type="button" className="icon-btn" disabled={!!media.delivery} aria-label={tr('screen466', {v0: item.file.name})} onClick={() => { media.remove(item.id); renderDraft(v => v + 1); }}><X size={16} /></button>
             </div>)}
           </div>}
-          {failedSend && outbox.current.length > 0 && <div className="outbox-status" role="status"><span>{tr('outboxFailed', { count: outbox.current.length })}</span>{failedSend && <><p>{outbox.current[0]?.pending.text || tr('fileType')}</p><button type="button" className="btn btn-secondary" onClick={() => {
-            const first = outbox.current[0];
-            if (first && drafts.current.get(first.conversationId) === first.pending) {
-              drafts.current.set(first.conversationId, new MediaDraft());
-              if (activeId.current === first.conversationId) { setDraft(''); setReply(null); }
-            }
-            void drainOutbox();
-          }}>{tr('retry')}</button></>}</div>}
-          {media?.delivery && !sending && <p className="form-error" role="status">{tr('screen467')}</p>}
           {uploading && <div className="upload-progress" role="status"><span>{uploadProgress === 100 ? tr('screen468') : tr('screen469', {v0: uploadProgress})} · {uploadName}</span><progress max={100} value={uploadProgress} aria-label={tr('screen470')} /></div>}
           <div className="composer">
+            <div className="composer-toolbar composer-attachments">
+              <button type="button" className="icon-btn" aria-label={tr('screen475')} onClick={() => file.current?.click()} disabled={!writable || !!media?.delivery}>{uploading ? <LoaderCircle size={20} className="spin" /> : <Paperclip size={21} />}</button>
+              <input hidden type="file" multiple ref={file} accept="image/png,image/jpeg,image/gif,image/webp,application/pdf" onChange={e => upload(e.target.files)} />
+            </div>
             <textarea
               ref={composer}
               disabled={!writable}
-              readOnly={!!media?.delivery}
               aria-busy={sending}
               onPaste={e => { const images = clipboardImages(e.clipboardData.items); if (images.length) { e.preventDefault(); upload(images); } }}
               rows={1}
@@ -768,65 +792,13 @@ export function ChatPage() {
               aria-label={tr('screen473')}
               maxLength={4000}
             />
-            <div className="composer-toolbar">
-              <div>
-                <button
-                  type="button"
-                  className={`icon-btn ${emojiOpen ? "selected" : ""}`}
-                  onClick={() => setEmojiOpen(!emojiOpen)}
-                  aria-label={tr('screen474')}
-                  aria-expanded={emojiOpen}
-                >
-                  <Smile size={21} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  aria-label={tr('screen475')}
-                  onClick={() => file.current?.click()}
-                  disabled={!writable || !!media?.delivery}
-                >
-                  {uploading ? (
-                    <LoaderCircle size={20} className="spin" />
-                  ) : (
-                    <Paperclip size={21} />
-                  )}
-                </button>
-                <input
-                  hidden
-                  type="file"
-                  multiple
-                  ref={file}
-                  accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
-                  onChange={(e) => void upload(e.target.files)}
-                />
-                <span className="composer-file-hint">
-                  {tr('screen476')}</span>
-              </div>
-              <div>
-                <span className="send-hint">
-                  {sendShortcut === "enter" ? tr('screen477') : tr('screen478')} <kbd>↵</kbd>
-                </span>
-                <button
-                  type="submit"
-                  className="send-button"
-                  onPointerDown={e => { if (document.activeElement === composer.current) e.preventDefault(); }}
-                  disabled={
-                    !writable ||
-                    (!draft.trim() && !media?.items.length)
-                  }
-                  aria-label={tr('screen479')}
-                >
-                  {sending ? (
-                    <LoaderCircle size={17} className="spin" />
-                  ) : (
-                    <Send size={17} />
-                  )}
-                </button>
-              </div>
+            <div className="composer-toolbar composer-actions">
+              <button type="button" className={`icon-btn ${emojiOpen ? 'selected' : ''}`} aria-label={tr('uiComposerMore')} aria-expanded={emojiOpen} onClick={() => setEmojiOpen(!emojiOpen)}><MoreHorizontal size={20} /></button>
+              <button type="submit" className="send-button" onPointerDown={e => { if (document.activeElement === composer.current) e.preventDefault(); }} disabled={!writable || (!draft.trim() && !media?.items.length)} aria-label={tr('screen479')}>{sending ? <LoaderCircle size={18} className="spin" /> : <Send size={18} />}</button>
             </div>
             {emojiOpen && (
-              <div className="emoji-palette" role="group" aria-label={tr('screen480')}>
+              <div className="emoji-palette" role="group" aria-label={tr('screen480')} onKeyDown={e => { if (e.key === 'Escape') { setEmojiOpen(false); composer.current?.focus({preventScroll:true}); } }}>
+                <span className="composer-menu-label"><Smile size={15} />{tr('screen480')}</span>
                 {emojis.map((emoji) => (
                   <button
                     type="button"
@@ -841,6 +813,7 @@ export function ChatPage() {
                     {emoji}
                   </button>
                 ))}
+                <span className="composer-menu-hint">{tr('screen476')}</span>
               </div>
             )}
           </div>
@@ -991,6 +964,8 @@ function MessageRow({
   message: m,
   conversation,
   own,
+  grouped,
+  showReceipt,
   onReply,
   onEdit,
   onRetract,
@@ -1001,6 +976,8 @@ function MessageRow({
   message: Message;
   conversation: Conversation;
   own: boolean;
+  grouped: boolean;
+  showReceipt: boolean;
   onReply: () => void;
   onEdit: () => void;
   onRetract: () => void;
@@ -1012,6 +989,7 @@ function MessageRow({
   const t = useSoundText();
   const [menu, setMenu] = useState(false),
     { toast } = useApp();
+  const preciseTime = new Date(m.createdAt).toLocaleString(getLanguage(), {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const peers = conversation.members.filter((v) => v.userId !== m.senderId),
     read =
       peers.length > 0 &&
@@ -1031,19 +1009,20 @@ function MessageRow({
       </div>
     );
   return (
-    <article className={`message-row ${own ? "own" : ""}`}>
-      <Link
+    <article className={`message-row ${own ? "own" : ""} ${grouped ? "grouped" : ""}`} aria-label={m.sender?.displayName || tr('genericUser')}>
+      {!grouped && <Link
         className="message-avatar"
         to={`/profile/${m.senderId}`}
         aria-label={tr('screen501', {v0: m.sender?.displayName || tr('genericUser')})}
       >
         <Avatar user={m.sender} size="sm" />
-      </Link>
+      </Link>}
       <div className="message-column">
-        <div className="message-meta">
+        {!grouped && <div className="message-meta">
           <strong>{own ? tr('screen499') : m.sender?.displayName || tr('screen281')}</strong>
-          <time dateTime={m.createdAt}>{formatTime(m.createdAt)}</time>
-        </div>
+          <time dateTime={m.createdAt} title={preciseTime} tabIndex={0}>{formatTime(m.createdAt)}</time>
+        </div>}
+        {grouped && <time className="message-exact-time" dateTime={m.createdAt} title={preciseTime} aria-label={preciseTime} tabIndex={0}>{formatTime(m.createdAt)}</time>}
         <div className="message-body">
           {m.replyTo && (
             <button
@@ -1065,9 +1044,9 @@ function MessageRow({
           {m.content && <div className="message-content">{m.content}</div>}
           {m.attachments?.map(a => <AttachmentPreview key={a.id} attachment={a} />)}
         </div>
-        <div className="message-footer">
+        {(m.editedAt || (own && showReceipt)) && <div className="message-footer">
           {m.editedAt && <span>{tr('screen502')}</span>}
-          {own && (
+          {own && showReceipt && (
             <span
               className={`message-receipt ${read ? "read" : ""}`}
               title={read ? tr('screen503') : delivered ? tr('screen504') : tr('screen505')}
@@ -1080,9 +1059,9 @@ function MessageRow({
               {read ? tr('screen506') : delivered ? tr('screen504') : tr('screen505')}
             </span>
           )}
-        </div>
+        </div>}
       </div>
-      <div className="message-tools"><ReportButton targetType="MESSAGE" targetId={m.id} />
+      <div className="message-tools">
         <button
           className="icon-btn"
           onClick={onReply}
@@ -1101,6 +1080,8 @@ function MessageRow({
         </button>
         {menu && (
           <div className="message-menu" role="group" aria-label={tr('screen508')} onKeyDown={e => { if (e.key === "Escape") setMenu(false); }}>
+            <time className="message-menu-time" dateTime={m.createdAt}>{preciseTime}</time>
+            {own && <span className="message-menu-time">{read ? tr('screen506') : delivered ? tr('screen504') : tr('screen505')}</span>}
             <button className="message-reply-mobile" onClick={() => { setMenu(false); onReply(); }}><Reply size={14} />{tr('screen507')}</button>
             {onForward && <button onClick={() => { setMenu(false); onForward(); }}><Forward size={14} />{t("forwardSelect")}</button>}
             <ReportButton targetType="MESSAGE" targetId={m.id} />

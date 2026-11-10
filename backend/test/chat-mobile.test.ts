@@ -183,3 +183,39 @@ it('keeps the editable draft when Socket delivery precedes delayed HTTP acknowle
  expect(requests.map(request => request.content)).toEqual(['queued first', 'queued second', 'queued third']);
  expect(host.querySelector('.outbox-status')).toBeNull();
 });
+
+it('uses one sender header and one receipt for consecutive messages and exposes exact timestamps', async () => {
+ const first = message('short one', 'group-one'), second = message('short two', 'group-two');
+ await act(async () => { for (const callback of listeners.get('message:new') || []) { callback(first); callback(second); } });
+ expect(host.querySelector('#message-group-one .message-meta')).not.toBeNull();
+ expect(host.querySelector('#message-group-two .message-meta')).toBeNull();
+ expect(host.querySelector('#message-group-two .message-avatar')).toBeNull();
+ const actions = host.querySelector('#message-group-two .message-more') as HTMLButtonElement;
+ await act(async () => actions.click());
+ expect(host.querySelector('#message-group-two .message-menu time')?.getAttribute('datetime')).toBe(second.createdAt);
+});
+
+it('continues queued delivery when Socket confirms a message whose HTTP acknowledgement fails', async () => {
+ let reject!: (error: Error) => void;
+ mock.api.mockImplementationOnce(() => new Promise((_,fail) => { reject = fail; }));
+ await text('socket confirmed'); await key(); await text('following draft'); await key();
+ const sent = posts()[0]![1].body;
+ await act(async () => { for (const callback of listeners.get('message:new') || []) callback({...message('socket confirmed','socket-confirmed'),sender:me,senderId:me.id,clientId:sent.clientId}); });
+ await act(async () => reject(new Error('acknowledgement lost')));
+ expect(posts()).toHaveLength(2); expect(host.querySelector('.outbox-status')).toBeNull();
+ expect(host.querySelectorAll('#message-socket-confirmed')).toHaveLength(1);
+ expect(posts()[1]![1].body.content).toBe('following draft');
+ expect(document.activeElement).toBe(input);
+});
+
+it('does not confuse keyboard resize scroll events with a request to read older messages', async () => {
+ const box = host.querySelector('.messages-scroll') as HTMLDivElement;
+ let height = 546; Object.defineProperty(box,'clientHeight',{configurable:true,get:()=>height});
+ Object.defineProperty(box,'scrollHeight',{configurable:true,value:2000}); box.scrollTop=1454;
+ await act(async () => box.dispatchEvent(new Event('scroll',{bubbles:true})));
+ await act(async () => { visibleHeight=430; height=240; viewportEvents.dispatchEvent(new Event('resize')); box.dispatchEvent(new Event('scroll',{bubbles:true})); await new Promise(resolve=>setTimeout(resolve,10)); });
+ expect(box.scrollTop).toBe(2000);
+ box.scrollTop=120; await act(async () => box.dispatchEvent(new Event('scroll',{bubbles:true})));
+ await act(async () => { visibleHeight=844; height=546; viewportEvents.dispatchEvent(new Event('resize')); await new Promise(resolve=>setTimeout(resolve,10)); });
+ expect(box.scrollTop).toBe(120);
+});

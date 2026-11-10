@@ -279,24 +279,15 @@
   background: var(--surface);
 }
 .sidebar-heading {
-  padding: 24px 20px 16px;
+  padding: 14px 18px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 .sidebar-heading h1 {
-  font-size: 23px;
+  font-size: 20px;
   letter-spacing: -0.04em;
-}
-.dot-accent {
-  color: var(--accent);
-}
-.sidebar-subtitle {
-  font-size: 11px;
-  display: block;
-  margin-top: 6px;
-  color: var(--muted);
 }
 .new-chat {
   background: var(--accent-soft);
@@ -317,10 +308,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 18px 16px;
+  margin: 0 16px 12px;
   background: var(--soft);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 0 12px;
   color: var(--muted);
 }
@@ -372,14 +363,14 @@
 }
 .conversation-entry {
   position: relative;
-  border-radius: 14px;
-  margin-bottom: 5px;
+  border-radius: 6px;
+  margin-bottom: 2px;
 }
 .conversation-row {
   display: flex;
   gap: 11px;
-  padding: 14px 34px 14px 12px;
-  border-radius: 14px;
+  padding: 10px 34px 10px 10px;
+  border-radius: 6px;
   min-width: 0;
   align-items: center;
 }
