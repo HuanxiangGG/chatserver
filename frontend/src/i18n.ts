@@ -15,12 +15,19 @@ function savedLanguage(): Language {
 let language = savedLanguage();
 const subscriptions = new Set<() => void>();
 const announce = () => subscriptions.forEach(fn => fn());
+function updateDocumentLanguage() {
+  document.documentElement.lang = language;
+  document.title = translate('uiDocumentTitle');
+  let description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+  if (!description) { description = document.createElement('meta'); description.name = 'description'; document.head.append(description); }
+  description.content = translate('uiDocumentDescription');
+}
 function onStorage(event: StorageEvent) {
   if (event.key !== storageKey && event.key !== null) return;
-  language = savedLanguage(); document.documentElement.lang = language; announce();
+  language = savedLanguage(); updateDocumentLanguage(); announce();
 }
 function subscribe(fn: () => void) {
-  document.documentElement.lang = language;
+  updateDocumentLanguage();
   if (!subscriptions.size) window.addEventListener('storage', onStorage);
   subscriptions.add(fn);
   return () => { subscriptions.delete(fn); if (!subscriptions.size) window.removeEventListener('storage', onStorage); };
@@ -29,7 +36,7 @@ export const getLanguage = () => language;
 export function setLanguage(next: Language) {
   language = next;
   try { localStorage.setItem(storageKey, next); } catch { /* The current page still uses the selected language. */ }
-  document.documentElement.lang = next;
+  updateDocumentLanguage();
   announce();
 }
 export function useLanguage() { return useSyncExternalStore(subscribe, getLanguage, () => 'zh-CN' as const); }

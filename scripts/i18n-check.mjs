@@ -32,6 +32,25 @@ function files(dir) { return fs.readdirSync(dir, { withFileTypes: true }).flatMa
 for (const file of files('frontend/src')) {
  const text = fs.readFileSync(file, 'utf8'), ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
  let count = 0;
+ const visibleAttributes = /^(title|placeholder|alt|aria-label|aria-description|aria-valuetext|aria-roledescription|label|heading|description|message|helperText|emptyText|confirmText|cancelText)$/;
+ const visibleText = value => /[a-zA-Z\u3400-\u9fff]/u.test(value);
+ // Follow only values rendered as text. Conditions, event handlers, CSS classes,
+ // API enums and translation arguments are not user-facing strings themselves.
+ function renderedExpression(node) {
+  if (!node) return;
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) { if (visibleText(node.text)) count++; return; }
+  if (ts.isTemplateExpression(node)) {
+   if (visibleText(node.head.text) || node.templateSpans.some(span => visibleText(span.literal.text))) count++;
+   node.templateSpans.forEach(span => renderedExpression(span.expression)); return;
+  }
+  if (ts.isConditionalExpression(node)) { renderedExpression(node.whenTrue); renderedExpression(node.whenFalse); return; }
+  if (ts.isBinaryExpression(node) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.PlusToken].includes(node.operatorToken.kind)) {
+   if (node.operatorToken.kind !== ts.SyntaxKind.AmpersandAmpersandToken) renderedExpression(node.left);
+   renderedExpression(node.right); return;
+  }
+  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isTypeAssertionExpression(node) || ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node)) { renderedExpression(node.expression); return; }
+  if (ts.isArrayLiteralExpression(node)) node.elements.forEach(renderedExpression);
+ }
  function visit(n) {
   if (ts.isStringLiteral(n) && Object.hasOwn(en, n.text)) used.add(n.text);
   if (ts.isCallExpression(n) && ['t', 'tr', 'translate'].includes(n.expression.getText(ast)) && n.arguments[0]) {
@@ -44,7 +63,11 @@ for (const file of files('frontend/src')) {
 
   if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) && /[\u3400-\u9fff]/u.test(n.text)) count++;
   if (ts.isJsxText(n) && /[a-zA-Z\u3400-\u9fff]/u.test(n.text.trim())) count++;
-  if (ts.isJsxAttribute(n) && /^(title|placeholder|alt|aria-label)$/.test(n.name.getText(ast)) && n.initializer && ts.isStringLiteral(n.initializer) && /[a-zA-Z]/.test(n.initializer.text)) count++;
+  if (ts.isJsxAttribute(n) && visibleAttributes.test(n.name.getText(ast)) && n.initializer) {
+   if (ts.isStringLiteral(n.initializer) && visibleText(n.initializer.text)) count++;
+   else if (ts.isJsxExpression(n.initializer)) renderedExpression(n.initializer.expression);
+  }
+  if (ts.isJsxExpression(n) && !ts.isJsxAttribute(n.parent)) renderedExpression(n.expression);
   ts.forEachChild(n, visit);
  }
  visit(ast); if (count) problems.push(`${file}: ${count} untranslated text occurrences`);

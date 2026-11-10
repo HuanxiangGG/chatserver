@@ -5,7 +5,9 @@
     "uiNoFiles": "还没有共享文件",
     "uiUnreadDivider": "以下为未读消息",
     "uiMuted": "你已被禁言，仍可查看聊天记录",
-    "uiChatLoading": "正在载入会话"
+    "uiChatLoading": "正在载入会话",
+    "uiDocumentTitle": "泊岸 Harbor · 即时交流",
+    "uiDocumentDescription": "泊岸 Harbor — 让每一次交流，自在发生。安全、即时的好友与群组聊天。"
   },
   "en": {
     "uiInfoFiles": "Shared files",
@@ -13,6 +15,8 @@
     "uiNoFiles": "No shared files yet",
     "uiUnreadDivider": "New messages",
     "uiMuted": "You are muted. You can still read messages.",
-    "uiChatLoading": "Loading conversation"
+    "uiChatLoading": "Loading conversation",
+    "uiDocumentTitle": "Harbor · Instant conversations",
+    "uiDocumentDescription": "Harbor — Feel at home in every conversation. Secure, real-time chats with friends and groups."
   }
 }

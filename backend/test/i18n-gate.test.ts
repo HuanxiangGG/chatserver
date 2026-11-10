@@ -14,3 +14,18 @@ it('rejects missing, duplicate, unused and mismatched interpolation keys',()=>{c
  writeFileSync(f.dictionary,original.replace('"en": {','"en": {"title":"duplicate",'));expect(f.run().stderr).toContain('Duplicate translation key');
 });
 it('rejects invalid translation references even when no hardcoded text is present',()=>{const f=fixture();writeFileSync(path.join(f.dir,'frontend/src/Invalid.tsx'),"const v = t('keyThatDoesNotExist');");expect(f.run().stderr).toContain('invalid translation key');});
+it('rejects hardcoded rendered expressions and accessible labels while preserving internal values',()=>{
+ const f=fixture(),file=path.join(f.dir,'frontend/src/ExpressionText.tsx');
+ for(const source of [
+  '<button>{busy ? "Sending..." : "Send message"}</button>',
+  '<p>{`Welcome ${username}`}</p>',
+  '<p>{error && (message || "Please try again")}</p>',
+  '<button aria-label={open ? "Close panel" : "Open panel"} />',
+  '<Dialog title={`Details for ${name}`}><input placeholder={"Type here"} /></Dialog>',
+  '<p>{["First line", "Second line"]}</p>',
+ ]) {
+  writeFileSync(file,source);const result=f.run();expect(result.status).toBe(1);expect(result.stderr).toContain('ExpressionText.tsx');
+ }
+ writeFileSync(file,'<button className={active ? "active" : "idle"} onClick={() => setMode("dark")} aria-label={t("title")}>{mode === "dark" ? t("title") : username}</button>');
+ expect(f.run().status).toBe(0);
+});
