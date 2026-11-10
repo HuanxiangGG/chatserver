@@ -4,7 +4,7 @@ Bots run in the developer's own process. Harbor never accepts or executes upload
 
 ## Built-in Welcome bot
 
-In community settings, open **Bots**, choose the Welcome bot, review the requested `SEND_MESSAGES` / `COMMANDS` grants, select only the intended channel (for example `#大厅`), and supply a welcome message. `{name}` is replaced with the new member's display name. A transactional `(installation, member)` claim and stable message ID produce one welcome even if join is retried. Reconnecting the browser never runs the join hook. Installation after someone already joined does not backfill greetings; a subsequent successful invite join can deliver the first greeting for that installation.
+In community settings, open **Bots**, choose the Welcome bot, review the requested `SEND_MESSAGES` / `COMMANDS` grants, select only the intended channel (for example `#大厅`), and supply a welcome message. `{name}` is replaced with the new member's display name. The welcome hook runs only when an invite actually creates a new community membership. A transactional `(installation, member)` claim and stable message ID prevent duplicate greetings. Refreshing, reconnecting, or submitting an invite for an existing member never sends a welcome. Installing or reinstalling a bot does not backfill greetings for members who already belong to the community.
 
 `/help` returns the current authorized command list privately. `/ticket` opens the private ticket form; no ticket subject, message or ticket activity is posted to a public channel.
 

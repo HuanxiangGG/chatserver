@@ -177,3 +177,22 @@ it('keeps oversized numeric ticket queries as text without overflowing Prisma In
  const exact=await api(owner).get(`/servers/${s1}/tickets?q=${encodeURIComponent('#'+created.body.number)}`);
  expect(exact.status).toBe(200);expect(exact.body.tickets.map((t:any)=>t.id)).toEqual([created.body.id]);
 });
+
+it('does not welcome existing members through invite retries after a fresh installation, but welcomes a real new join once',async()=>{
+ const current=(await api(owner).get(`/servers/${s1}/bots`)).body.find((i:any)=>i.bot.builtin);
+ expect(current).toBeTruthy();expect((await api(owner).delete(`/servers/${s1}/bots/${current.id}`)).status).toBe(200);
+ const installed=await api(owner).post(`/servers/${s1}/bots`,{botId:builtin.id,channelIds:[hall.id],permissions:['SEND_MESSAGES','COMMANDS'],config:{welcome:'新成员 {name}'}});
+ expect(installed.status).toBe(201);
+ const before=await prisma.message.count({where:{conversationId:hall.conversationId,sender:{role:'BOT'}}});
+ const invite=await api(owner).post(`/servers/${s1}/invites`,{hours:1,maxUses:10});expect(invite.status).toBe(201);
+ const existing=await Promise.all([api(a).post(`/invites/${invite.body.token}/join`),api(a).post(`/invites/${invite.body.token}/join`)]);
+ expect(existing.map(r=>r.status)).toEqual([200,200]);
+ expect(await prisma.message.count({where:{conversationId:hall.conversationId,sender:{role:'BOT'}}})).toBe(before);
+ expect(await prisma.botWelcome.count({where:{installationId:installed.body.id,userId:a.user.id}})).toBe(0);
+ const newcomer=await register('new');
+ const joined=await Promise.all([api(newcomer).post(`/invites/${invite.body.token}/join`),api(newcomer).post(`/invites/${invite.body.token}/join`)]);
+ expect(joined.map(r=>r.status)).toEqual([200,200]);
+ expect(await prisma.message.count({where:{conversationId:hall.conversationId,sender:{role:'BOT'}}})).toBe(before+1);
+ expect(await prisma.botWelcome.count({where:{installationId:installed.body.id,userId:newcomer.user.id}})).toBe(1);
+ expect((await prisma.serverInvite.findUnique({where:{id:invite.body.id}})).uses).toBe(1);
+});

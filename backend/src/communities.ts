@@ -140,18 +140,19 @@ router.post('/invites/:token/join', asyncRoute(async (req, res) => {
   await consumeLimit(`invite-join:${req.user.id}`, 30, 3600);
   const token = validate(tokenSchema, req.params.token);
   const invite = await prisma.serverInvite.findUnique({ where: { tokenHash: hash(token) } }); if (!invite) throw new HttpError(404, '邀请不存在');
-  await prisma.$transaction(async db => {
+  const joined = await prisma.$transaction(async db => {
     await lockServer(db, invite.serverId);
     const current = await db.serverInvite.findUniqueOrThrow({ where: { id: invite.id } });
     if (current.revokedAt || current.expiresAt <= new Date() || current.uses >= current.maxUses) throw new HttpError(400, '邀请已过期、撤销或次数已用尽');
     if (await db.serverBan.findUnique({ where: { serverId_userId: { serverId: invite.serverId, userId: req.user.id } } })) throw new HttpError(403, '你已被此社区封禁');
-    if (await db.serverMember.findUnique({ where: { serverId_userId: { serverId: invite.serverId, userId: req.user.id } } })) return;
+    if (await db.serverMember.findUnique({ where: { serverId_userId: { serverId: invite.serverId, userId: req.user.id } } })) return false;
     if (await db.serverMember.count({ where: { serverId: invite.serverId } }) >= 200 || await db.serverMember.count({ where: { userId: req.user.id } }) >= 50) throw new HttpError(400, '社区成员或已加入社区数量达到上限');
     await db.serverMember.create({ data: { serverId: invite.serverId, userId: req.user.id } });
     await db.serverInvite.update({ where: { id: current.id }, data: { uses: { increment: 1 } } });
     await syncChannelReaders(db, invite.serverId); await audit(db, req.user.id, 'JOIN', invite.serverId);
+    return true;
   });
-  await welcomeJoined(invite.serverId, req.user.id);
+  if (joined) await welcomeJoined(invite.serverId, req.user.id);
   await notify(invite.serverId); res.json({ serverId: invite.serverId });
 }));
 router.patch('/servers/:id/members/:userId', asyncRoute(async (req, res) => {
