@@ -137,6 +137,9 @@ export function Layout() {
   const task = useTask(), location = useLocation(), navigate = useNavigate(), drawer = useRef<HTMLDivElement>(null), accountButton = useRef<HTMLButtonElement>(null);
   const isCommunity = location.pathname.startsWith('/servers/'), serverId = isCommunity ? location.pathname.split('/')[2]! : '';
   const onChat = location.pathname.startsWith('/chat') || isCommunity;
+  // Community home already shows its channel list. Settings and tickets own
+  // their back navigation; only channel chats need the shell's drawer trigger.
+  const showDrawerTrigger = onChat && (!isCommunity || location.pathname.split('/')[3] === 'channels');
   const active = isCommunity ? (location.pathname.endsWith('/settings') ? 'settings' : location.pathname.split('/')[3] === 'tickets' ? 'tickets' : location.pathname.split('/')[4]) : location.pathname.split('/')[2];
   const view = new URLSearchParams(location.search).get('view') || 'all';
   useEffect(() => { setSidebarOpen(false); setMenu(false); }, [location.pathname, location.search]);
@@ -171,7 +174,7 @@ export function Layout() {
   function navClass(selected: boolean) { return `rail-link ${selected ? 'active' : ''}`; }
   const unread = conversations.filter(c=>c.type==='DIRECT'||c.type==='GROUP').reduce((sum, c) => sum + c.unreadCount, 0);
   return <div className={`app-layout ${collapsed ? 'nav-is-collapsed' : 'nav-is-expanded'} ${sidebarOpen ? 'sidebar-is-open' : ''} ${onChat && active ? 'layout-has-conversation' : ''}`}>
-    {onChat && <button className="mobile-sidebar-toggle icon-btn" aria-label={tr('navDrawerTitle')} title={tr('navDrawerTitle')} aria-expanded={sidebarOpen} aria-controls="conversation-drawer" onClick={() => setSidebarOpen(v => !v)}><Menu size={22} /></button>}
+    {showDrawerTrigger && <button className="mobile-sidebar-toggle icon-btn" aria-label={tr('navDrawerTitle')} title={tr('navDrawerTitle')} aria-expanded={sidebarOpen} aria-controls="conversation-drawer" onClick={() => setSidebarOpen(v => !v)}><Menu size={22} /></button>}
     <aside className="nav-rail" aria-label={tr('screen339')}>
       <div className="rail-brand-row"><Link to="/chat" aria-label={tr('screen338')} className="rail-brand"><Brand compact={collapsed} /></Link><button className="icon-btn rail-collapse" onClick={collapse} title={tr(collapsed ? 'navExpand' : 'navCollapse')} aria-label={tr(collapsed ? 'navExpand' : 'navCollapse')}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button></div>
       <nav aria-label={tr('screen339')}>
