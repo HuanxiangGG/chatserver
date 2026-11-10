@@ -160,18 +160,35 @@ async function ctx(browser, person, width) {
       };
     });
   const p = await c.newPage(),
-    errors = [];
-  p.on("pageerror", (e) => errors.push(e.message));
+    errors = [],
+    state = { reloading: false },
+    navigationDiagnostics = [];
+  p.on("pageerror", (e) => {
+    // Linux WebKit reports cancelled old-document fetches through pageerror.
+    // Classify only its exact native diagnostic during our explicit reload;
+    // keep a record, and still fail real JS errors and rejected Promises.
+    if (state.reloading && /^Fetch API cannot load http/.test(e.name) && /due to access control checks\.$/.test(e.message))
+      navigationDiagnostics.push({ name: e.name, message: e.message });
+    else errors.push({ name: e.name, message: e.message });
+  });
   await p.addInitScript(() => {
     window.controlsUnhandled = 0;
     addEventListener("unhandledrejection", () => window.controlsUnhandled++);
   });
-  return { c, p, errors };
+  return { c, p, errors, state, navigationDiagnostics };
 }
 async function visit(p, path) {
   await p.waitForLoadState("networkidle");
   assert.equal(await p.evaluate(() => window.controlsUnhandled || 0), 0);
-  await p.goto(`${base.origin}${path}`);
+  if (p.url().startsWith(`${base.origin}/`)) {
+    // Ordinary navigation in the product uses React Router, not document
+    // replacement. Keep live connections and in-flight reads across routes.
+    await p.evaluate((path) => {
+      history.pushState(null, "", path);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, path);
+    await p.waitForURL(`${base.origin}${path}`);
+  } else await p.goto(`${base.origin}${path}`);
 }
 async function noOverflow(p) {
   assert(
@@ -214,8 +231,11 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
         });
         await op.waitForLoadState("networkidle");
         assert.equal(await op.evaluate(() => window.controlsUnhandled || 0), 0);
+        owner.state.reloading = true;
         await op.reload();
         await op.locator("#ticket-settings").waitFor();
+        await op.waitForLoadState("networkidle");
+        owner.state.reloading = false;
         assert(await guestSwitch.isChecked());
         if (engine === "chromium" && width === 1440) {
           // Exercise the actual UI installation, including the actionable empty-channel error.
@@ -590,6 +610,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
           width,
           passed: true,
           keyboard: width < 640 ? "simulated" : "not applicable",
+          navigationDiagnostics: [owner, guest, recover, outsider].flatMap(s => s.navigationDiagnostics),
         });
       } catch (error) {
         await gp.screenshot({
