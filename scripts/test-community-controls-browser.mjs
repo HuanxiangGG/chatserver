@@ -54,7 +54,9 @@ else {
     const actor = async (name) => {
       const r = await call("/auth/register", "POST", {
         username: `cc_${name}_${prefix}`,
-        displayName: name,
+        // Display names are not identities. Deliberately duplicate members'
+        // names so moderation acceptance must target the stable profile ID.
+        displayName: name === "b" ? "a" : name,
         email: `cc_${name}_${prefix}@example.test`,
         password,
       });
@@ -529,7 +531,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
         await visit(op, `/servers/${f.server.id}/settings`);
         await op
           .locator(".community-member")
-          .filter({ hasText: f.a.user.displayName })
+          .filter({ has: op.locator(`a[href="/profile/${f.a.user.id}"]`) })
           .getByRole("button")
           .last()
           .click();
@@ -543,7 +545,12 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
         await dialog.locator(`input[value="${f.hall.id}"]`).check();
         await dialog.locator(`input[value="${f.trade.id}"]`).check();
         await dialog.locator("[name=reason]").fill("请先阅读频道规则");
+        const restrictionSaved = op.waitForResponse(response =>
+          response.url().endsWith(`/api/servers/${f.server.id}/members/${f.a.user.id}/channel-restrictions`) &&
+          response.request().method() === "PUT",
+        );
         await dialog.getByRole("button", { name: "保存", exact: true }).click();
+        assert.equal((await restrictionSaved).status(), 200);
         await dialog.waitFor({ state: "detached" });
         const blocked = await fetch(
           `${base.origin}/api/conversations/${f.hall.conversationId}/messages`,
@@ -564,7 +571,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
         assert.equal(blocked.status, 403);
         await op
           .locator(".community-member")
-          .filter({ hasText: f.a.user.displayName })
+          .filter({ has: op.locator(`a[href="/profile/${f.a.user.id}"]`) })
           .getByRole("button")
           .last()
           .click();
