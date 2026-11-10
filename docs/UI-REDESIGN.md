@@ -6,6 +6,10 @@
 
 附带定位并修复：Safari IME keyCode229漏防护；Dialog在autoFocus后才捕获原焦点且Escape依赖内部焦点；极小图片按钮只有1px高度；平板发送按钮42px；320px群成员管理行不换行；外观首次账户导入与新保存的竞态。均有对应组件、浏览器或权限回归。
 
+发送成功还移除了对可编辑新草稿的冗余回写，避免异步确认影响下一条输入；已覆盖Socket广播早于HTTP确认、确认期间继续输入的连续发送回归。
+
+另一处根因是消息区只在最新消息ID变化时跟随底部：键盘缩小和多行输入使消息区变矮，最新消息会被挤出可视区域。现在用ResizeObserver及图片load监听合并到rAF，仅在用户正在跟随最新时保持底部；阅读历史不强制滚动。双引擎复现的299–367px遮挡，修复后底部距离为0px。
+
 ## 统一界面
 
 - Tide令牌：深蓝层次、靛青/紫色/青绿色、克制渐变、柔和边框；完整亮色/深色模式、统一圆角/控件/焦点/卡片/Toast/弹窗；动画尊重用户开关与prefers-reduced-motion。
@@ -18,7 +22,7 @@
 
 ## 视口与键盘
 
-应用壳在移动端使用`--app-height`/`--app-offset-top`，来自visualViewport resize/scroll、焦点和旋转事件，rAF合并更新；CSS有dvh/svh/lvh回退及safe-area。消息区flex:min-height:0独立滚动，输入区与底栏正常流排列。`data-keyboard=open`隐藏底栏和声音引导，键盘关闭恢复；pinch zoom不重排；不调用window.scrollTo抢焦点/滚动。旋转基线按实际宽度变化重置，避免Safari事件时序造成误判。
+应用壳在移动端使用`--app-height`/`--app-offset-top`，来自visualViewport resize/scroll、焦点和旋转事件，rAF合并更新；CSS有dvh/svh/lvh回退及safe-area。消息区flex:min-height:0独立滚动，输入区与底栏正常流排列。`data-keyboard=open`隐藏底栏和声音引导，键盘关闭恢复；pinch zoom不重排；不调用window.scrollTo抢焦点/滚动。保持通用viewport-fit=cover，不依赖各WebKit构建支持程度不同的interactive-widget元数据；键盘由visualViewport独立处理。旋转基线按实际宽度变化重置，避免Safari事件时序造成误判。
 
 ## 数据与配置
 
@@ -26,9 +30,9 @@
 
 ## 本地实际验证
 
-- `npm run i18n:check`通过，自动扫描全部双语catalog，检测漏翻、硬编码、重复、缺键、未用/无效key与插值。
-- `npm run typecheck`、`npm run build`通过。Vite约538KB JS提示为后续分包优化建议，不是构建错误。
-- `npm run test`：23文件，175/175通过，使用隔离PostgreSQL `_test`与Redis测试库。新增外观权限、同步竞态、导航/静音、视口、移动输入/嵌套弹窗和管理员确认测试；既有功能回归保持通过。
+- `npm run i18n:check`通过，自动扫描全部双语catalog，检测漏翻、硬编码、重复、缺键、未用/无效key与插值；补充检查JSX中的英文三元/模板/逻辑回退/数组和可访问属性。页面标题与描述也跟随语言切换和跨标签设置。
+- `npm run typecheck`、`npm run build`通过。Vite约539KB JS提示为后续分包优化建议，不是构建错误。
+- `npm run test`：23文件，178/178通过，使用隔离PostgreSQL `_test`与Redis测试库。新增外观权限、同步竞态、导航/静音、视口、移动输入/嵌套弹窗和管理员确认测试；既有功能回归保持通过。
 - 真实Chromium和WebKit：320、360、375、390、414、768、1024、1440px共16组。消息/按钮无溢出、输入区域有界、关键触摸控件至少44px；双引擎真实Socket连续3条按序唯一送达，输入焦点与后续草稿保留。测试与截图已接入CI。
 - 双引擎额外交互：模拟键盘430px+24px偏移、关闭恢复、IME兼容事件、多行、真实网络发送失败后保留/重试、历史停留时真实Socket新消息、图片上传和预览、会话/信息抽屉、中文/English和明/暗设置持久化、844x390触摸横屏均通过；未捕获页面JS异常。
 - 双引擎320/768/1440下会话列表、好友、资料、群管理、设置、登录、注册、找回密码共48组检查通过。修复的群成员溢出另加入CI回归。
