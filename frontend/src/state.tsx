@@ -1,4 +1,5 @@
 import { localizeApiError } from './i18n';
+import { useAppearance, useAppearanceRuntime, updateAppearance } from './appearance-store';
 import { translate as tr, useLanguage } from './i18n';
 import { coalescedRefresh } from './coalesced-refresh';
 import { soundSessionTimes } from './sound';
@@ -58,10 +59,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [sync, setSync] = useState(0),
     [notice, setNotice] = useState<{ message: string; error: boolean } | null>(
       null,
-    ),
-    [theme, setThemeState] = useState(
-      () => localStorage.getItem("harbor-theme") || "light",
     );
+  const { resolved: theme } = useAppearance();
+  useAppearanceRuntime(user?.id);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     authUserId = useRef<string | null>(null),
     deliveredIds = useRef(new Map<string, string>());
@@ -224,12 +224,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id, csrfToken, refresh]);
   function setTheme(value: string) {
-    setThemeState(value);
-    localStorage.setItem("harbor-theme", value);
+    updateAppearance({ mode: value === 'light' || value === 'system' ? value : 'dark' });
   }
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
   return (
     <Context.Provider
       value={{

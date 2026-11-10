@@ -1,3 +1,4 @@
+import { AppearanceSettings } from './appearance';
 import { getLanguage, setLanguage, useTranslation, type TranslationKey } from './i18n';
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
@@ -10,10 +11,11 @@ import {
   MessageCircle,
   ShieldCheck,
   Sparkles,
+  Palette,
 } from "lucide-react";
 import { api, json } from "./api";
 import { useApp } from "./state";
-import { Brand, Spinner } from "./ui";
+import { Brand, Dialog, Spinner } from "./ui";
 import type { User } from "./types";
 export function AuthPage({
   mode,
@@ -22,6 +24,7 @@ export function AuthPage({
 }) {
   const t = useTranslation();
   const [recoveryMail, setRecoveryMail] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const { user, loading, login, toast } = useApp(),
     navigate = useNavigate(),
     location = useLocation();
@@ -147,7 +150,7 @@ export function AuthPage({
         <div className="auth-mobile-brand">
           <Brand />
         </div>
-        <div className="auth-form-wrap"><label className="auth-language">{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t('chinese')}</option><option value="en">{t('english')}</option></select></label>
+        <div className="auth-form-wrap"><label className="auth-language">{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t('chinese')}</option><option value="en">{t('english')}</option></select></label><button type="button" className="btn btn-secondary auth-appearance" onClick={() => setAppearanceOpen(true)}><Palette size={16}/>{t('appearanceTitle')}</button>
           <span className="eyebrow">
             {mode === "register" ? t('auth22') : t('auth23')}
           </span>
@@ -346,6 +349,7 @@ export function AuthPage({
         </div>
         <div className="auth-bottom">{t('auth70')}</div>
       </section>
+      {appearanceOpen && <Dialog title={t('appearanceTitle')} onClose={() => setAppearanceOpen(false)}><AppearanceSettings /></Dialog>}
     </main>
   );
 }

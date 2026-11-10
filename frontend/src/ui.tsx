@@ -56,6 +56,8 @@ export function Avatar({
         <i
           className={`presence-dot ${user?.status?.toLowerCase() || "offline"}`}
           title={statusText(user as User)}
+          role="img"
+          aria-label={statusText(user as User)}
         />
       )}
     </span>
@@ -152,16 +154,27 @@ export function Dialog({
   title,
   children,
   onClose,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  className?: string;
 }) {
   useLanguage();
   const dialog = useRef<HTMLElement>(null);
+  const priorFocus = useRef(document.activeElement as HTMLElement | null);
+  const closeHandler = useRef(onClose); closeHandler.current = onClose;
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    return () => previous?.focus();
+    const previous = priorFocus.current;
+    const panel = dialog.current;
+    if (panel && !panel.contains(document.activeElement)) panel.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
+    const escape = (event: globalThis.KeyboardEvent) => {
+      const panels = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (event.key === 'Escape' && panels[panels.length - 1] === panel) { event.preventDefault(); event.stopPropagation(); closeHandler.current(); }
+    };
+    document.addEventListener('keydown', escape, true);
+    return () => { document.removeEventListener('keydown', escape, true); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
   }, []);
   return (
     <div
@@ -172,12 +185,11 @@ export function Dialog({
     >
       <section
         ref={dialog}
-        className="dialog"
+        className={`dialog ${className}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
           if (e.key === "Tab") {
             const items = [
               ...dialog.current!.querySelectorAll<HTMLElement>(

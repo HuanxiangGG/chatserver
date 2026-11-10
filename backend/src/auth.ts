@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { requestRecovery } from './recovery-mail.js';
 import { expireBan } from './ban-policy.js';
 import { Router } from 'express';
@@ -50,6 +51,16 @@ router.get('/users/me/sound', requireAuth, asyncRoute(async (req, res) => {
 router.put('/users/me/sound', requireAuth, asyncRoute(async (req, res) => {
   const sound = validate(soundSchema, req.body);
   await prisma.userPreference.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, sound }, update: { sound } }); res.json({ sound });
+}));
+const appearanceSchema = z.strictObject({ mode: z.enum(['dark', 'light', 'system']), accent: z.enum(['indigo', 'violet', 'teal']), density: z.enum(['comfortable', 'compact']), fontSize: z.union([z.literal(14), z.literal(16), z.literal(18)]), animations: z.boolean() });
+router.get('/users/me/appearance', requireAuth, asyncRoute(async (req, res) => {
+  const row = await prisma.userPreference.findUnique({ where: { userId: req.user.id }, select: { appearance: true } }); res.json({ appearance: row?.appearance ?? null });
+}));
+router.put('/users/me/appearance', requireAuth, asyncRoute(async (req, res) => {
+  const appearance = validate(appearanceSchema, req.body);
+  // JSON null preserves the sound endpoint's unset state so guest audio settings
+  // can still import when appearance is the first preference saved on an account.
+  await prisma.userPreference.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, sound: Prisma.JsonNull, appearance }, update: { appearance } }); res.json({ appearance });
 }));
 router.post('/auth/logout', requireAuth, asyncRoute(async (req, res) => {
   await prisma.session.update({ where: { id: req.session.id }, data: { revokedAt: new Date() } });

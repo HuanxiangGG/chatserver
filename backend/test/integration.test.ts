@@ -275,6 +275,23 @@ it('persists sound preferences per account with authentication, CSRF and schema 
   expect((await api(b).get('/users/me/sound')).body.sound).toBeNull();
 });
 
+it('isolates appearance preferences and preserves existing sound settings', async () => {
+  expect((await api().get('/users/me/appearance')).status).toBe(401);
+  const a = await register('appeara', '192.0.2.81'), b = await register('appearb', '192.0.2.82');
+  const appearance = { mode: 'system', accent: 'teal', density: 'compact', fontSize: 18, animations: false };
+  const put = (person: Person, body: unknown, csrf = person.csrfToken) => request(app).put('/api/users/me/appearance').set('Origin', origin).set('Cookie', person.cookie).set('X-CSRF-Token', csrf).send(body);
+  expect((await put(a, appearance, '')).status).toBe(403);
+  expect((await put(a, { ...appearance, fontSize: 99 })).status).toBe(400);
+  expect((await put(a, { ...appearance, userId: b.user.id })).status).toBe(400);
+  expect((await put(a, appearance)).status).toBe(200);
+  expect((await api(a).get('/users/me/appearance')).body.appearance).toEqual(appearance);
+  expect((await api(b).get('/users/me/appearance')).body.appearance).toBeNull();
+  const before = (await api(a).get('/users/me/sound')).body.sound;
+  expect(before).toBeNull();
+  await put(a, { ...appearance, mode: 'light' });
+  expect((await api(a).get('/users/me/sound')).body.sound).toEqual(before);
+});
+
 it('searches only permitted visible messages with literal keywords, filters and stable pagination', async () => {
   const a = await register('searcha'), b = await register('searchb');
   await friend(a, b);

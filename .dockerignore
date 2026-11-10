@@ -12,3 +12,7 @@ coverage
 **/*.log
 
 certificates
+
+# Local browser evidence never belongs in application images.
+test-results
+playwright-report

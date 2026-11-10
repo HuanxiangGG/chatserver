@@ -2,9 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 const problems = [];
-const source = fs.readFileSync('frontend/src/locales/sound.json', 'utf8');
-const dictionaries = JSON.parse(source);
-const json = ts.parseJsonText('sound.json', source);
+const dictionaries = { 'zh-CN': {}, en: {} };
 function duplicates(node) {
  if (ts.isObjectLiteralExpression(node)) {
   const keys = new Set();
@@ -12,7 +10,14 @@ function duplicates(node) {
  }
  ts.forEachChild(node, duplicates);
 }
-duplicates(json);
+for (const filename of fs.readdirSync('frontend/src/locales').filter(name => name.endsWith('.json') && name !== 'api-errors.json')) {
+ const source = fs.readFileSync(path.join('frontend/src/locales', filename), 'utf8');
+ const catalog = JSON.parse(source); duplicates(ts.parseJsonText(filename, source));
+ for (const language of ['zh-CN', 'en']) for (const [key, value] of Object.entries(catalog[language] || {})) {
+  if (Object.hasOwn(dictionaries[language], key)) problems.push(`Duplicate translation key across catalogs: ${key}`);
+  dictionaries[language][key] = value;
+ }
+}
 const zh = dictionaries['zh-CN'], en = dictionaries.en;
 const used = new Set();
 const apiKeys = JSON.parse(fs.readFileSync('frontend/src/locales/api-errors.json', 'utf8'));

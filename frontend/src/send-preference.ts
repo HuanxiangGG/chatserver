@@ -17,7 +17,7 @@ export function useSendShortcut(): [SendShortcut, (value: SendShortcut) => void]
     try { localStorage.setItem(key, next); window.dispatchEvent(new Event(changed)); } catch { /* In-memory preference still works. */ }
   }];
 }
-export function shouldSend(event: { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean; nativeEvent: { isComposing: boolean } }, mode: SendShortcut) {
-  return event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing &&
+export function shouldSend(event: { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean; nativeEvent: { isComposing: boolean; keyCode?: number } }, mode: SendShortcut) {
+  return event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 &&
     (mode === 'enter' ? !event.ctrlKey && !event.metaKey : event.ctrlKey || event.metaKey);
 }

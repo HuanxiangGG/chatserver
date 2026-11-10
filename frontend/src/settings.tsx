@@ -1,3 +1,4 @@
+import { AppearanceSettings } from './appearance';
 import { translate as tr, useLanguage } from './i18n';
 import { NotificationSettings } from './notification-ui';
 import { SoundSettingsPanel } from './sound-ui';
@@ -7,11 +8,9 @@ import { Link } from "react-router-dom";
 import {
   ArrowUpRight,
   Ban,
-  Check,
   ChevronRight,
   KeyRound,
   LogOut,
-  Moon,
   ShieldCheck,
   Sun,
   UserRound,
@@ -23,7 +22,7 @@ import { Avatar, Dialog, Empty, PageHeading, useTask } from "./ui";
 export function SettingsPage() {
   useLanguage();
   const [sendShortcut, setSendShortcut] = useSendShortcut();
-  const { user, theme, setTheme, reloadUser, socket, logout, toast } = useApp(),
+  const { user, reloadUser, socket, logout, toast } = useApp(),
     [blocks, setBlocks] = useState<User[]>([]),
     [busy, setBusy] = useState(false),
     [changePassword, setChangePassword] = useState(false),
@@ -103,46 +102,7 @@ export function SettingsPage() {
                 </div>
               </div>
             </section>
-            <section className="settings-section" id="appearance">
-              <h2>{tr('screen370')}</h2>
-              <p>{tr('screen382')}</p>
-              <div className="theme-options">
-                <button
-                  className={`theme-choice ${theme === "light" ? "selected" : ""}`}
-                  onClick={() => setTheme("light")}
-                >
-                  <span className="theme-preview preview-light">
-                    <i />
-                    <div>
-                      <i />
-                      <i />
-                      <i />
-                    </div>
-                  </span>
-                  <span>
-                    <Sun size={16} />
-                    {tr('screen383')}{theme === "light" && <Check size={16} />}
-                  </span>
-                </button>
-                <button
-                  className={`theme-choice ${theme === "dark" ? "selected" : ""}`}
-                  onClick={() => setTheme("dark")}
-                >
-                  <span className="theme-preview preview-dark">
-                    <i />
-                    <div>
-                      <i />
-                      <i />
-                      <i />
-                    </div>
-                  </span>
-                  <span>
-                    <Moon size={16} />
-                    {tr('screen384')}{theme === "dark" && <Check size={16} />}
-                  </span>
-                </button>
-              </div>
-            </section>
+            <AppearanceSettings />
             <section className="settings-section" id="security">
               <h2>{tr('screen371')}</h2>
               <p>{tr('screen385')}</p>

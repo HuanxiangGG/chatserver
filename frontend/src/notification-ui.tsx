@@ -1,3 +1,4 @@
+import { isConversationMuted } from './conversation-preferences';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api';
@@ -43,7 +44,7 @@ export function NotificationRuntime() {
   let live = true;
   const dispatcher = new NotificationDispatcher((title, options) => new Notification(title, options), () => current.current.toast(current.current.t('notificationError'), true));
   const handle = async (message: Message) => {
-   const state = current.current; if (!state.user || state.user.id !== user.id) return;
+   const state = current.current; if (!state.user || state.user.id !== user.id || isConversationMuted(user.id, message.conversationId)) return;
    let conversation = state.conversations.find(c => c.id === message.conversationId);
    if (!conversation) { try { conversation = await api<Conversation>(`/conversations/${message.conversationId}`); } catch { return; } }
    if (!live || current.current.user?.id !== user.id) return;

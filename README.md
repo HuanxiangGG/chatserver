@@ -400,3 +400,31 @@ docker compose ps
 前后端均需重新构建；启动脚本已在API启动前执行增量迁移。核对前后原用户、消息和群组ID、计数，以及原上传文件SHA256和卷挂载。新记录可以增加，既有ID和文件不应消失。备份与清单限制为管理员可读，不放网站目录或 Git。应用回滚保留增量表，不反向执行破坏性 schema 回滚。
 
 `./scripts/verify-backup-ci.sh` 只允许 GitHub 的临时 Runner 上运行，会对真实 Compose 实例备份、恢复到新数据库和新目录、比较数据行数及文件内容，并验证再次恢复拒绝覆盖。它不用于生产。
+
+## Tide UI 与移动端键盘布局
+
+界面现在使用共享设计令牌，样式职责拆分为 `design-system.css`（颜色、控件、焦点、动效）、`components.css`（现有功能表单/卡片）、`shell.css`（导航/会话列表）、`chat-layout.css`（消息/输入区）及 `responsive.css`（主要布局断点）。手机 <640px，平板 640–1023px，桌面 >=1024px；触摸横屏的短视口沿用手机布局。没有更换后端、Socket 或部署架构。
+
+移动端使用单一应用视口，消息区独立滚动、输入区和底部导航处于正常布局流中。`visualViewport` 模块统一更新可视高度和偏移，兼容 `dvh/svh/lvh` 与安全区域；键盘打开时隐藏底栏，关闭后恢复。Pinch zoom 不触发应用重排。组合输入同时检查 `isComposing` 与 Safari 兼容的 keyCode 229。聊天仍使用现有分页与有序发送队列，失败保留内容，不强制改变历史阅读位置。
+
+新增增量迁移 `20261109160000_appearance_preferences` 仅给 UserPreference 添加可空 JSONB 外观字段。新增受认证、Origin 和 CSRF 保护的 `GET/PUT /api/users/me/appearance`：深色/亮色/跟随系统、靛青/紫色/青绿色、紧凑/舒适间距、14/16/18px 字号和动画开关。未登录保存在浏览器，登录后同步账户；保存请求串行执行以避免竞态。声音、浏览器通知和语言沿用独立设置。
+
+会话置顶、静音和隐藏明确标注为当前浏览器、当前账户偏好；隐藏不会删除聊天记录，收到新 Socket 消息会重新显示。静音实际影响声音与系统通知。右侧信息在窄屏改为可键盘操作的模态抽屉；共享文件取自已加载的真实消息，不冒充全部文件搜索。
+
+### 浏览器回归
+
+```bash
+npm run i18n:check
+npm run typecheck
+npm run build
+npm run test
+npx playwright install chromium webkit
+# 只允许隔离 _test 库；沿用测试 DATABASE_URL、REDIS_URL 等配置
+npm run test:browser:ci
+```
+
+浏览器包装器使用本地 3000/5173 端口，运行前确保没有其他服务占用。它只停止自己启动的进程，不清理数据库或卷；浏览器脚本拒绝公网地址与非 `_test` 库。CI 会执行 Chromium/WebKit 的 320、360、375、390、414、768、1024、1440px 截图、溢出/输入区断言和真实 Socket 连续三条消息的顺序、唯一性、焦点及草稿验证。截图保存在忽略 Git/Docker 的 `test-results/browser/` 并作为短期 CI Artifact 上传。所有账号和消息都是隔离测试库内新建的测试记录。
+
+WebKit 模拟不是实体 iPhone Safari，Chromium 模拟不是实体 Android Chrome。当前未接入实体设备；真实软键盘、中文/英文输入法、刘海屏与浏览器地址栏行为必须在目标手机继续验收，不能根据模拟测试报告真机通过。
+
+生产更新仍在原目录、原 Compose 项目和原 Caddy 配置下进行：先备份及记录 `scripts/data-inventory.sh` 清单，正式合并后 `git pull --ff-only`、`docker compose up -d --build`、`docker compose exec -T backend npx prisma migrate deploy`，再检查健康和前后数据/文件清单。需重建前后端镜像；不要覆盖现有 `.env` 或改变卷名。

@@ -19,10 +19,13 @@
     "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
     "db:seed": "npm run seed -w backend",
     "admin:create": "npm run admin:create -w backend",
-    "i18n:check": "node scripts/i18n-check.mjs"
+    "i18n:check": "node scripts/i18n-check.mjs",
+    "test:browser": "node scripts/test-browser.mjs",
+    "test:browser:ci": "node scripts/browser-ci.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
+    "playwright": "^1.65.0",
     "prisma": "6.19.3",
     "typescript": "~5.9.3",
     "vite": "^7.3.7"

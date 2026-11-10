@@ -1,6 +1,7 @@
 import { translate as tr, useLanguage } from './i18n';
+import { useVisualViewport } from './viewport';
 import { NotificationRuntime } from './notification-ui';
-import { SoundRuntime, SoundEntry } from './sound-ui';
+import { SoundRuntime } from './sound-ui';
 import React from "react";
 import ReactDOM from "react-dom/client";
 import {
@@ -40,11 +41,12 @@ function Guard() {
   );
 }
 function App() {
+  useVisualViewport();
   useLanguage();
   return (
     <BrowserRouter>
       <AppProvider>
-        <SoundRuntime /><NotificationRuntime /><SoundEntry />
+        <SoundRuntime /><NotificationRuntime />
         <Routes>
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/login" element={<AuthPage key="login" mode="login" />} />

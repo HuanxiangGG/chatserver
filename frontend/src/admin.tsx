@@ -1,7 +1,7 @@
 import { getLanguage, translate as tr, useLanguage } from './i18n';
 import { AdminReports } from './reports';
 import { useTranslation } from './i18n';
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   Ban,
@@ -45,7 +45,13 @@ export function AdminPage() {
     [loading, setLoading] = useState(true),
     [banTarget, setBanTarget] = useState<User | null>(null),
     [busy, setBusy] = useState(false),
+    [moderationId, setModerationId] = useState(''),
+    [moderationReason, setModerationReason] = useState(''),
+    [pendingDeletion, setPendingDeletion] = useState<{ messageId: string; reason: string } | null>(null),
+    [deleting, setDeleting] = useState(false),
+    [deleteError, setDeleteError] = useState(''),
     task = useTask();
+  const deletionLock = useRef(false);
   const load = useCallback(async () => {
     try {
       const [s, u, a] = await Promise.all([
@@ -235,32 +241,19 @@ export function AdminPage() {
                   {tr('screen293')}</p>
                 <form
                   className="form-stack"
-                  onSubmit={async (e) => {
+                  onSubmit={(e) => {
                     e.preventDefault();
-                    if (
-                      !window.confirm(
-                        tr('screen294'),
-                      )
-                    )
-                      return;
-                    const form = e.currentTarget,
-                      values = new FormData(form);
-                    setBusy(true);
-                    const result = await task(async () => {
-                      await api(
-                        `/admin/messages/${encodeURIComponent(String(values.get("messageId")))}`,
-                        json("DELETE", { reason: values.get("reason") }),
-                      );
-                      await load();
-                      return true;
-                    }, tr('screen295'));
-                    if (result) form.reset();
-                    setBusy(false);
+                    if (deletionLock.current) return;
+                    setDeleteError('');
+                    setPendingDeletion({ messageId: moderationId.trim(), reason: moderationReason.trim() });
                   }}
                 >
                   <label>
                     {tr('screen296')}<input
                       name="messageId"
+                      value={moderationId}
+                      onChange={e => setModerationId(e.target.value)}
+                      disabled={!!pendingDeletion}
                       required
                       maxLength={100}
                       placeholder={tr('screen297')}
@@ -269,6 +262,9 @@ export function AdminPage() {
                   <label>
                     {tr('screen298')}<textarea
                       name="reason"
+                      value={moderationReason}
+                      onChange={e => setModerationReason(e.target.value)}
+                      disabled={!!pendingDeletion}
                       required
                       minLength={3}
                       maxLength={500}
@@ -276,9 +272,9 @@ export function AdminPage() {
                       placeholder={tr('screen299')}
                     />
                   </label>
-                  <button className="btn btn-danger" disabled={busy}>
+                  <button className="btn btn-danger" disabled={!!pendingDeletion}>
                     <Trash2 size={16} />
-                    {busy ? tr('auth58') : tr('screen300')}
+                    {tr('screen300')}
                   </button>
                 </form>
               </section>
@@ -317,6 +313,28 @@ export function AdminPage() {
             )}
           </>
         )}
+        {pendingDeletion && <Dialog title={tr('confirmDelete')} onClose={() => { if (!deletionLock.current) setPendingDeletion(null); }}>
+          <div aria-busy={deleting}>
+            <p>{tr('screen294')}</p>
+            <dl><dt>{tr('screen296')}</dt><dd><code>{pendingDeletion.messageId}</code></dd><dt>{tr('screen298')}</dt><dd>{pendingDeletion.reason}</dd></dl>
+            {deleteError && <p className="error-box" role="alert">{deleteError}</p>}
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-secondary" disabled={deleting} onClick={() => setPendingDeletion(null)}>{tr('cancel')}</button>
+              <button type="button" className="btn btn-danger" disabled={deleting} onClick={async () => {
+                if (deletionLock.current) return;
+                deletionLock.current = true; setDeleting(true); setDeleteError('');
+                const submitted = pendingDeletion;
+                try {
+                  await api(`/admin/messages/${encodeURIComponent(submitted.messageId)}`, json('DELETE', { reason: submitted.reason }));
+                  setModerationId(current => current.trim() === submitted.messageId ? '' : current);
+                  setModerationReason(current => current.trim() === submitted.reason ? '' : current);
+                  setPendingDeletion(null); toast(tr('screen295')); await load();
+                } catch (error) { setDeleteError(error instanceof Error ? error.message : tr('screen323')); }
+                finally { deletionLock.current = false; setDeleting(false); }
+              }}>{deleting ? tr('auth58') : tr('confirmDelete')}</button>
+            </div>
+          </div>
+        </Dialog>}
         {banTarget && (
           <Dialog
             title={`${banTarget.banned ? tr('screen288') : tr('screen289')} ${banTarget.displayName}？`}

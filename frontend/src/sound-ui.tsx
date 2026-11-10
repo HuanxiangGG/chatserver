@@ -1,3 +1,4 @@
+import { isConversationMuted } from './conversation-preferences';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api, json } from './api';
@@ -46,7 +47,7 @@ export function SoundRuntime() {
   socket.on('session:ready', ready);
   if (socket.connected) connected(); socket.on('connect', connected);
   const receive = async (m: Message) => {
-   const c = context.current, current = c.user; if (!current || !player || syncing || syncFailed) return;
+   const c = context.current, current = c.user; if (!current || !player || syncing || syncFailed || isConversationMuted(current.id, m.conversationId)) return;
    let conversation = c.conversations.find((v: Conversation) => v.id === m.conversationId);
    if (!conversation) { try { conversation = await api<Conversation>(`/conversations/${m.conversationId}`); } catch { return; } }
    if (context.current.user?.id !== current.id) return;
@@ -79,4 +80,9 @@ export function SoundSettingsPanel() {
  <div className="sound-actions"><button type="button" className="btn btn-secondary" disabled={busy || syncing} onClick={async () => { const ok = await player?.test(settings); setStatus(ok ? 'played' : 'blocked'); notify(); }}>{t('test')}</button><button type="button" className="btn btn-primary" disabled={busy || syncing} onClick={async () => { const id = user?.id; setBusy(true); try { if (id) await api('/users/me/sound', json('PUT', settings)); else if (!write('harbor.sound.guest', JSON.stringify(settings))) throw new Error('Local preference storage unavailable'); if (owner.current === id) setStatus('saved'); } catch { if (owner.current === id) setStatus('failed'); } finally { setBusy(false); } }}>{t('save')}</button></div>
  <p aria-live="polite">{busy || syncing ? t('loading') : status ? t(status) : ''}</p></section>;
 }
-export function SoundEntry() { const t = useSoundText(), [open, setOpen] = useState(false); return <div className="sound-entry"><button type="button" className="btn btn-secondary" onClick={() => { setOpen(!open); if (!player?.ready && !syncing) void player?.unlock().then(ok => { blocked = !ok; notify(); }); }} aria-expanded={open}>{t(player?.ready ? 'settings' : 'enable')}</button>{open && <SoundSettingsPanel />}</div>; }
+export function SoundEntry() {
+ const { user } = useApp(), t = useSoundText(), [, render] = useState(0), [busy,setBusy] = useState(false);
+ useEffect(() => { const change = () => render(v => v + 1); listeners.add(change); return () => { listeners.delete(change); }; }, []);
+ if (!user || player?.ready || !settings.enabled) return null;
+ return <section className="sound-entry-inline" aria-live="polite"><button type="button" disabled={busy || syncing} className="btn btn-secondary" onClick={async () => { setBusy(true); try { const ok = await player?.unlock(); blocked = !ok; notify(); } finally { setBusy(false); } }}>{t(busy ? 'loading' : 'enable')}</button>{blocked && <span>{t('blocked')}</span>}</section>;
+}

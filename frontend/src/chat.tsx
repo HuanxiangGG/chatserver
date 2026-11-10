@@ -15,6 +15,7 @@ import {
   ArrowUpRight,
   Check,
   CheckCheck,
+  Forward,
   ChevronDown,
   Copy,
   File,
@@ -45,7 +46,6 @@ import {
   Dialog,
   Empty,
   ErrorBox,
-  Spinner,
   conversationTitle,
   conversationUser,
   formatTime,
@@ -97,6 +97,8 @@ export function ChatPage() {
     [editedText, setEditedText] = useState(""),
     [emojiOpen, setEmojiOpen] = useState(false),
     [infoOpen, setInfoOpen] = useState(false),
+    [atBottom, setAtBottom] = useState(true),
+    [firstUnreadId, setFirstUnreadId] = useState<string | null>(null),
     [group, setGroup] = useState(false),
     [typing, setTyping] = useState<Record<string, number>>({}),
     [confirm, setConfirm] = useState<{
@@ -158,6 +160,10 @@ export function ChatPage() {
         ]);
         if (activeId.current !== id) return;
         setConversation(c);
+        if (!quiet) {
+          const lastRead = c.members.find(m => m.userId === user?.id)?.lastReadAt;
+          setFirstUnreadId(c.unreadCount > 0 ? result.messages.find(m => m.senderId !== user?.id && (!lastRead || m.createdAt > lastRead))?.id || null : null);
+        }
         setMessages((old) => {
           if (!quiet || !old.length || !result.messages.length)
             return result.messages;
@@ -187,7 +193,7 @@ export function ChatPage() {
     [id],
   );
   useEffect(() => {
-    setMessages([]);
+    setMessages([]); setAtBottom(true); setFirstUnreadId(null);
     setContextView(false); setSelecting(false); setForwardIds([]); setForwardOpen(false);
     setConversation(null);
     setDraft(id ? queue(id).text : "");
@@ -279,6 +285,10 @@ export function ChatPage() {
       socket.off("receipt:updated", onReceipt);
     };
   }, [socket, id, user?.id]);
+  useEffect(() => {
+    const input = composer.current; if (!input) return;
+    input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+  }, [draft, id, loading]);
   const latestId = messages.at(-1)?.id;
   useEffect(() => { if (followBottom.current) scrollBottom(); }, [latestId]);
   useEffect(() => {
@@ -496,7 +506,7 @@ export function ChatPage() {
         {group && <CreateGroup onClose={() => setGroup(false)} />}
       </section>
     );
-  if (loading) return <Spinner label={tr('screen439')} />;
+  if (loading) return <section className="chat-skeleton" role="status" aria-label={tr('uiChatLoading')}>{Array.from({length: 5}, (_, i) => <div key={i}><span className="skeleton-line" /><span className="skeleton-line" /></div>)}</section>;
   if (error)
     return (
       <div className="chat-error">
@@ -534,7 +544,7 @@ export function ChatPage() {
           {isChannel ? <div className="channel-symbol"><Hash size={28} /></div> : <Avatar user={other} group={isGroup} showStatus={!isGroup} />}
           <div className="chat-header-title">
             <h1>
-              {title}
+              <span className="chat-title-text">{title}</span>
               {isGroup && <span className="group-tag">{isChannel ? tr('screen443') : tr('screen217')}</span>}
             </h1>
             <span>
@@ -543,7 +553,7 @@ export function ChatPage() {
                 : statusText(other)}
             </span>
           </div>
-          <div className="chat-header-actions"><button type="button" className="btn btn-secondary" onClick={() => { setSelecting(!selecting); setForwardIds([]); }}>{t(selecting ? "forwardCancel" : "forwardSelect")}</button><MessageSearch key={conversation.id} conversation={conversation} locate={locateMessage} />
+          <div className="chat-header-actions"><button type="button" className="icon-btn forward-trigger" title={t(selecting ? "forwardCancel" : "forwardSelect")} aria-label={t(selecting ? "forwardCancel" : "forwardSelect")} onClick={() => { setSelecting(!selecting); setForwardIds([]); }}><Forward size={19} /></button><MessageSearch key={conversation.id} conversation={conversation} locate={locateMessage} />
             <button
               className={`icon-btn ${infoOpen ? "selected" : ""}`}
               onClick={() => setInfoOpen(!infoOpen)}
@@ -564,6 +574,7 @@ export function ChatPage() {
           </div>
         </header>
         {!!conversation.unreadAnnouncements && conversation.type === 'GROUP' && <Link className="announcement-banner" to={`/groups/${id}#announcements`}>{t('unreadAnnouncements', {count: conversation.unreadAnnouncements})}</Link>}
+        {conversation.mute && !writable && <p className="mute-banner" role="status">{tr('uiMuted')}</p>}
         {contextView && <button className="btn btn-secondary" onClick={() => { setContextView(false); void load(); }}>{t("backLatest")}</button>}
         {selecting && <button type="button" className="btn btn-primary" disabled={!forwardIds.length} onClick={() => setForwardOpen(true)}>{t("forwardCount", { count: forwardIds.length })}</button>}
         <div className="chat-security-note">
@@ -575,7 +586,7 @@ export function ChatPage() {
           ref={scroll}
           onScroll={() => {
             const box = scroll.current;
-            if (box) followBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 160;
+            if (box) { followBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 160; setAtBottom(followBottom.current); }
             if (
               scroll.current &&
               scroll.current.scrollTop < 60 &&
@@ -639,11 +650,13 @@ export function ChatPage() {
                       </span>
                     </div>
                   )}
+                  {m.id === firstUnreadId && <div className="unread-divider" role="separator">{tr('uiUnreadDivider')}</div>}
                   <MessageRow
                     message={m}
                     conversation={conversation}
                     own={m.senderId === user!.id}
                     onLocate={locateMessage}
+                    onForward={() => { setForwardIds([m.id]); setForwardOpen(true); }}
                     onReply={() => {
                       setReply(m);
                       composer.current?.focus();
@@ -689,6 +702,7 @@ export function ChatPage() {
           )}
           <div ref={end} />
         </div>
+        {!atBottom && !contextView && <button type="button" className="btn btn-secondary jump-latest" onClick={() => { followBottom.current = true; setAtBottom(true); scrollBottom(); }}><ChevronDown size={16} />{t("backLatest")}</button>}
         <div className="typing-indicator" aria-live="polite">
           {selectedTyping.length > 0 && (
             <>
@@ -811,7 +825,6 @@ export function ChatPage() {
                   onPointerDown={e => { if (document.activeElement === composer.current) e.preventDefault(); }}
                   disabled={
                     !writable ||
-                    uploading ||
                     (!draft.trim() && !media?.items.length)
                   }
                   aria-label={tr('screen479')}
@@ -854,6 +867,7 @@ export function ChatPage() {
       </div>
       {forwardOpen && <ForwardDialog messages={messages.filter(m => forwardIds.includes(m.id))} close={() => setForwardOpen(false)} done={() => { setForwardOpen(false); setSelecting(false); setForwardIds([]); toast(t("forwardDone")); void refresh().catch(e => toast(e.message, true)); }} />}
       {infoOpen && (
+        <InfoPanel close={() => setInfoOpen(false)}>
         <aside className="conversation-info">
           <header>
             <span>{tr('screen484')}</span>
@@ -916,6 +930,8 @@ export function ChatPage() {
               {tr('screen494')}<ArrowUpRight size={15} />
             </button>
           )}
+          <div className="info-section-title">{tr('uiInfoFiles')}</div>
+          <section className="info-files"><p>{tr('uiInfoFilesHint')}</p>{messages.flatMap(m => m.attachments).length ? messages.flatMap(m => m.attachments).map(a => <AttachmentPreview key={a.id} attachment={a} />) : <p>{tr('uiNoFiles')}</p>}</section>
           <div className="info-privacy">
             <ShieldCheck size={20} />
             <p>
@@ -923,7 +939,7 @@ export function ChatPage() {
               <small>{tr('screen496')}</small>
             </p>
           </div>
-        </aside>
+        </aside></InfoPanel>
       )}
       {editing && (
         <Dialog title={tr('screen497')} onClose={() => setEditing(null)}>
@@ -992,6 +1008,7 @@ function MessageRow({
   onRetract,
   onHide,
   onLocate,
+  onForward,
 }: {
   message: Message;
   conversation: Conversation;
@@ -1001,6 +1018,7 @@ function MessageRow({
   onRetract: () => void;
   onHide: () => void;
   onLocate: (id: string) => Promise<void>;
+  onForward?: () => void;
 }) {
   useLanguage();
   const t = useSoundText();
@@ -1086,7 +1104,7 @@ function MessageRow({
           <Reply size={16} />
         </button>
         <button
-          className="icon-btn"
+          className="icon-btn message-more"
           onClick={() => setMenu(!menu)}
           aria-label={tr('screen508')}
           aria-expanded={menu}
@@ -1094,7 +1112,10 @@ function MessageRow({
           <MoreHorizontal size={18} />
         </button>
         {menu && (
-          <div className="message-menu">
+          <div className="message-menu" role="group" aria-label={tr('screen508')} onKeyDown={e => { if (e.key === "Escape") setMenu(false); }}>
+            <button className="message-reply-mobile" onClick={() => { setMenu(false); onReply(); }}><Reply size={14} />{tr('screen507')}</button>
+            {onForward && <button onClick={() => { setMenu(false); onForward(); }}><Forward size={14} />{t("forwardSelect")}</button>}
+            <ReportButton targetType="MESSAGE" targetId={m.id} />
             <button
               onClick={() => {
                 setMenu(false);
@@ -1141,4 +1162,10 @@ function MessageRow({
       </div>
     </article>
   );
+}
+
+function InfoPanel({children, close}: {children: import('react').ReactNode; close: () => void}) {
+ const [overlay, setOverlay] = useState(() => window.matchMedia('(max-width:1279px)').matches);
+ useEffect(() => { const media = window.matchMedia('(max-width:1279px)'); const update = () => setOverlay(media.matches); media.addEventListener('change',update); return () => media.removeEventListener('change',update); },[]);
+ return overlay ? <Dialog title={tr('screen484')} className="info-dialog" onClose={close}>{children}</Dialog> : <>{children}</>;
 }
