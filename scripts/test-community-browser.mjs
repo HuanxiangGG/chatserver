@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {createTestPng as testImage} from './browser-fixtures.mjs';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {chromium,webkit} from 'playwright';
+import {navigate} from './browser-navigation.mjs';
 const base=new URL(process.env.UI_TEST_BASE_URL||'http://localhost:5173');
 assert(['localhost','127.0.0.1'].includes(base.hostname)&&base.protocol==='http:');assert(new URL(process.env.DATABASE_URL||'postgresql://invalid/unsafe').pathname.endsWith('_test'));
 const output=new URL(process.env.COMMUNITY_OUTPUT||'../test-results/browser/community/',import.meta.url);await mkdir(output,{recursive:true,mode:0o700});
@@ -29,7 +30,7 @@ async function context(browser,person,width){const context=await browser.newCont
 // Finish the page's real HTTP work before deliberately replacing its document.
 // Otherwise WebKit reports cancelled body reads as native Fetch page diagnostics.
 // Check rejections before navigation too, so replacing the document cannot erase failures.
-async function visit(page,url){await page.waitForLoadState('networkidle');assert.equal(await page.evaluate(()=>window.reviewUnhandled||0),0);await page.goto(url);}
+async function visit(page,url){await page.waitForLoadState('networkidle');assert.equal(await page.evaluate(()=>window.reviewUnhandled||0),0);await navigate(page,url);}
 const results=[];
 for(const [engine,type]of Object.entries({chromium,webkit}).filter(([engine])=>!process.env.REVIEW_ENGINE||engine===process.env.REVIEW_ENGINE)){
  const browser=await type.launch();try{for(const width of[1440,390].filter(w=>!process.env.REVIEW_WIDTH||w===Number(process.env.REVIEW_WIDTH))){

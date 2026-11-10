@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { chromium, webkit } from 'playwright';
 import { io } from 'socket.io-client';
+import { navigate } from './browser-navigation.mjs';
 const base = new URL(process.env.UI_TEST_BASE_URL || 'http://localhost:5173');
 const database = new URL(process.env.DATABASE_URL || 'postgresql://invalid/unsafe');
 assert(['localhost', '127.0.0.1'].includes(base.hostname) && base.protocol === 'http:' && !base.username && !base.password && base.pathname === '/', 'UI test URL must be local HTTP');
@@ -56,7 +57,7 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
    page.on('requestfailed', request => requests.push({ kind: 'requestfailed', method: request.method(), type: request.resourceType(), resource: resourcePath(request.url()), failure: browserErrorText(request.failure()?.errorText || '') }));
    page.on('response', response => { if (response.status() >= 400) requests.push({ kind: 'response', status: response.status(), resource: resourcePath(response.url()), type: response.request().resourceType() }); });
    try {
-    await page.goto(`${base.origin}/chat/${group.id}`); await page.locator('.composer textarea').waitFor();
+    await navigate(page,`${base.origin}/chat/${group.id}`); await page.locator('.composer textarea').waitFor();
     await page.waitForFunction(() => document.querySelector('.connection-hidden'));
     const metrics = await page.evaluate(() => {
      const rect = selector => { const r = document.querySelector(selector)?.getBoundingClientRect(); return r ? { top: r.top, width: r.width, height: r.height, bottom: r.bottom, right: r.right } : null; };
@@ -104,7 +105,7 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
     }
     assert.deepEqual(errors, [], `${engine}/${width}: browser errors`);
     await page.screenshot({ path: new URL(`${engine}-${width}-chat.png`, output).pathname }); results.push({ engine, width, passed: true, metrics });
-    if (width === 390 || width === 1440) { await page.goto(`${base.origin}/settings`); await page.locator('.appearance-settings').waitFor(); await page.screenshot({ path: new URL(`${engine}-${width}-settings.png`, output).pathname }); assert.deepEqual(errors, []);
+    if (width === 390 || width === 1440) { await navigate(page,`${base.origin}/settings`); await page.locator('.appearance-settings').waitFor(); await page.screenshot({ path: new URL(`${engine}-${width}-settings.png`, output).pathname }); assert.deepEqual(errors, []);
      if (width === 390) {
       for (const language of ['zh-CN','en']) for (const theme of ['dark','light']) {
        await page.locator('.sound-settings select').first().selectOption(language);
@@ -118,7 +119,7 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
      }
     }
     if (width === 320 || width === 768) for (const [name,path] of [['friends','/friends'],['profile','/profile'],['group',`/groups/${group.id}`]]) {
-     await page.goto(`${base.origin}${path}`); await page.locator('.page-content').waitFor();
+     await navigate(page,`${base.origin}${path}`); await page.locator('.page-content').waitFor();
      const clipped = await page.locator('.workspace,.page-scroll,.page-content').evaluateAll(nodes => nodes.filter(node => node.scrollWidth > node.clientWidth + 1).length);
      assert.equal(clipped,0,`${engine}/${width}/${name}: content clipping`);
      await page.screenshot({path:new URL(`${engine}-${width}-${name}.png`,output).pathname});

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { chromium, webkit } from "playwright";
+import { navigate } from "./browser-navigation.mjs";
 const base = new URL(process.env.UI_TEST_BASE_URL || "http://localhost:5173");
 assert(
   ["localhost", "127.0.0.1"].includes(base.hostname) &&
@@ -180,15 +181,7 @@ async function ctx(browser, person, width) {
 async function visit(p, path) {
   await p.waitForLoadState("networkidle");
   assert.equal(await p.evaluate(() => window.controlsUnhandled || 0), 0);
-  if (p.url().startsWith(`${base.origin}/`)) {
-    // Ordinary navigation in the product uses React Router, not document
-    // replacement. Keep live connections and in-flight reads across routes.
-    await p.evaluate((path) => {
-      history.pushState(null, "", path);
-      dispatchEvent(new PopStateEvent("popstate"));
-    }, path);
-    await p.waitForURL(`${base.origin}${path}`);
-  } else await p.goto(`${base.origin}${path}`);
+  await navigate(p, `${base.origin}${path}`);
 }
 async function noOverflow(p) {
   assert(
