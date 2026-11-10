@@ -15,24 +15,37 @@ import {
   Sun,
   UserRound,
 } from "lucide-react";
-import { api, json } from "./api";
+import { api, json, ApiError } from "./api";
 import { useApp } from "./state";
 import type { User } from "./types";
-import { Avatar, Dialog, Empty, PageHeading, useTask } from "./ui";
+import { Avatar, Dialog, Empty, ErrorBox, PageHeading, Spinner, useTask } from "./ui";
 export function SettingsPage() {
   useLanguage();
   const [sendShortcut, setSendShortcut] = useSendShortcut();
   const { user, reloadUser, socket, logout, toast } = useApp(),
     [blocks, setBlocks] = useState<User[]>([]),
+    [blocksLoaded, setBlocksLoaded] = useState(false),
+    [blocksLoading, setBlocksLoading] = useState(true),
+    [blocksError, setBlocksError] = useState<{ message: string; invalidResponse: boolean } | null>(null),
+    [blocksRevision, setBlocksRevision] = useState(0),
     [busy, setBusy] = useState(false),
     [changePassword, setChangePassword] = useState(false),
     [confirmLogout, setConfirmLogout] = useState(false),
     task = useTask();
   useEffect(() => {
-    void api<User[]>("/blocks")
-      .then(setBlocks)
-      .catch((e) => toast(e.message, true));
-  }, [toast]);
+    let current = true;
+    const controller = new AbortController();
+    setBlocksLoading(true);
+    setBlocksError(null);
+    void api<User[]>("/blocks", { signal: controller.signal })
+      .then(value => {
+        if (!Array.isArray(value)) throw new ApiError(tr('apiUnreadableResponse'), 200, 'INVALID_RESPONSE');
+        if (current) { setBlocks(value); setBlocksLoaded(true); }
+      })
+      .catch((e) => { if (current) setBlocksError({ message: e.message, invalidResponse: e instanceof ApiError && e.code === 'INVALID_RESPONSE' }); })
+      .finally(() => { if (current) setBlocksLoading(false); });
+    return () => { current = false; controller.abort(); };
+  }, [blocksRevision]);
   async function status(value: "ONLINE" | "BUSY") {
     const result = await task(() =>
       api<User>("/users/me", json("PATCH", { status: value })),
@@ -62,7 +75,7 @@ export function SettingsPage() {
               {tr('screen371')}</a>
             <a href="#blocked">
               <Ban size={17} />
-              {tr('screen372')}<span>{blocks.length}</span>
+              {tr('screen372')}<span>{blocksLoaded ? blocks.length : '—'}</span>
             </a>
           </nav>
           <div className="settings-main"><SoundSettingsPanel /><NotificationSettings />
@@ -124,12 +137,15 @@ export function SettingsPage() {
                 </p>
               </div>
             </section>
-            <section className="settings-section" id="blocked">
+            <section className="settings-section blocked-settings" id="blocked" aria-busy={blocksLoading}>
               <h2>
-                {tr('screen372')}<span className="count-pill">{blocks.length}</span>
+                {tr('screen372')}<span className="count-pill">{blocksLoaded ? blocks.length : '—'}</span>
               </h2>
               <p>{tr('screen391')}</p>
-              {blocks.length ? (
+              <button type="button" className="btn btn-secondary btn-small blocked-refresh" disabled={blocksLoading} onClick={() => setBlocksRevision(value => value + 1)}>{tr('screen322')}</button>
+              {blocksLoading && <Spinner />}
+              {blocksError && <ErrorBox message={blocksError.invalidResponse ? tr('apiUnreadableResponse') : blocksError.message} retry={() => setBlocksRevision(value => value + 1)} />}
+              {blocksLoaded && blocks.length ? (
                 blocks.map((u) => (
                   <div className="blocked-row" key={u.id}>
                     <Avatar user={u} size="sm" />
@@ -149,13 +165,13 @@ export function SettingsPage() {
                       {tr('screen393')}</button>
                   </div>
                 ))
-              ) : (
+              ) : !blocksLoading && !blocksError && blocksLoaded ? (
                 <Empty
                   icon={<Ban size={25} />}
                   title={tr('screen394')}
                   description={tr('screen395')}
                 />
-              )}
+              ) : null}
             </section>
             <div className="settings-signout">
               <div>

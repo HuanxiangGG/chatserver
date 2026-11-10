@@ -32,15 +32,24 @@ export async function api<T = unknown>(
   } catch {
     throw new ApiError(tr('screen408'), 0);
   }
-  const data =
-    response.status === 204 ? null : await response.json().catch(() => null);
+  let data: unknown = null;
+  if (response.status !== 204) {
+    try {
+      data = await response.json();
+    } catch {
+      // A fetch can resolve its headers before a connection/body read fails.
+      // Never turn an incomplete success response into successful null data.
+      if (response.ok) throw new ApiError(tr('apiUnreadableResponse'), response.status, 'INVALID_RESPONSE');
+    }
+    if (response.ok && data === null) throw new ApiError(tr('apiUnreadableResponse'), response.status, 'INVALID_RESPONSE');
+  }
   if (!response.ok)
     throw new ApiError(
-      typeof data?.error === "string"
-        ? localizeApiError(data.error)
+      typeof (data as { error?: unknown } | null)?.error === "string"
+        ? localizeApiError((data as { error: string }).error)
         : (response.status >= 500 ? tr('screen409') : tr('screen410', {v0: response.status})),
       response.status,
-      data?.code,
+      typeof (data as { code?: unknown } | null)?.code === 'string' ? (data as { code: string }).code : undefined,
     );
   return data as T;
 }

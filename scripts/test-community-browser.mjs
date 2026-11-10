@@ -36,6 +36,13 @@ for(const [engine,type]of Object.entries({chromium,webkit}).filter(([engine])=>!
  const browser=await type.launch();try{for(const width of[1440,390].filter(w=>!process.env.REVIEW_WIDTH||w===Number(process.env.REVIEW_WIDTH))){
  const member=await context(browser,f.a,width),owner=await context(browser,f.owner,width);const page=member.page,op=owner.page;
  try{
+ // A body interrupted after HTTP 200 must remain a visible request failure,
+ // never a successful null value that crashes the settings render.
+ const blocksUrl=`${base.origin}/api/blocks`;let incompleteBlocks=true;
+ await page.route(blocksUrl,route=>incompleteBlocks?route.fulfill({status:200,contentType:'application/json',body:'[{'}):route.continue());
+ await page.goto(`${base.origin}/settings`);await page.locator('#blocked .error-box button').waitFor();
+ incompleteBlocks=false;await page.locator('#blocked .error-box button').click();await page.locator('#blocked .empty').waitFor();
+ assert.equal(await page.locator('#blocked .error-box').count(),0);await page.unroute(blocksUrl);
  // A successful background refresh may remove either retry button before a pointer click stabilizes.
  // Dispatch against the current DOM atomically, then require real authorized data and the same route.
  if(width===1440){const detailUrl=`${base.origin}/api/servers/${f.server.id}`;let failing=true;await page.route(detailUrl,route=>failing?route.fulfill({status:503,contentType:'application/json',body:'{}'}):route.continue());await page.goto(`${base.origin}/servers/${f.server.id}`);const reload=page.locator('.community-sidebar .error-box button');await reload.waitFor();await page.locator('.empty button').waitFor();failing=false;await reload.evaluateAll(buttons=>buttons[0]?.click());await page.locator('.channel-row').first().waitFor();await page.locator('.empty button').evaluateAll(buttons=>buttons[0]?.click());await page.locator('.community-channel-cards a').first().waitFor();assert.equal(new URL(page.url()).pathname,`/servers/${f.server.id}`,'Retry must stay in the community');await page.unroute(detailUrl);}

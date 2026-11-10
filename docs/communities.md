@@ -61,7 +61,7 @@
 
 频道创建/编辑新增 `permissionOverrides`、`roleOverrides: [{roleId, permissions}]`，以及原有 `userIds` 指定查看者。不能引用别的社区的身份组、分类或成员。
 
-`server:updated` 只向当前成员通知 `{serverId}` 以重新加载可见数据。`ticket:updated` 仅向授权当事人及需要撤销本地状态的原读者发送 `{id, serverId, conversationId}`，不带正文。消息继续使用 `message:new`、`message:updated`、`conversation:updated`、回执和输入提示等已有事件，受 ConversationMember 与实时权限检查约束。断线恢复通过重新请求授权列表、消息和未读同步，不把历史补发当成新提示音。
+`server:updated` 向当前成员及需要撤销本地社区状态的被移除成员通知 `{serverId}`，以重新加载可见数据。`ticket:updated` 仅向授权当事人及需要撤销本地状态的原读者发送 `{id, serverId, conversationId}`，不带正文。消息继续使用 `message:new`、`message:updated`、`conversation:updated`、回执和输入提示等已有事件，受 ConversationMember 与实时权限检查约束。断线恢复通过重新请求授权列表、消息和未读同步，不把历史补发当成新提示音。
 
 ## 范围与限制
 
@@ -108,6 +108,10 @@ diff -u "$private_backup_dir/before-community.txt" "$private_backup_dir/after-co
 
 ```bash
 # TEST_DATABASE_URL：库名以 _test 结尾；TEST_REDIS_URL：专用 Redis /9。
+node -e 'if (!new URL(process.env.TEST_DATABASE_URL).pathname.endsWith("_test") || new URL(process.env.TEST_REDIS_URL).pathname !== "/9") process.exit(1)'
+# 迁移读取 DATABASE_URL，明确指向刚验证的隔离测试库。
+export DATABASE_URL="$TEST_DATABASE_URL"
+export REDIS_URL="$TEST_REDIS_URL"
 npm run db:generate
 npm run db:migrate
 npm run test -w backend -- test/communities.test.ts

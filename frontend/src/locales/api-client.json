@@ -1,0 +1,4 @@
+{
+  "zh-CN": { "apiUnreadableResponse": "响应未完整收到或格式异常，请重试。" },
+  "en": { "apiUnreadableResponse": "The response was incomplete or invalid. Please retry." }
+}
