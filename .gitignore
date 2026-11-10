@@ -12,3 +12,6 @@ playwright-report/
 test-results/
 certificates/
 *.tsbuildinfo
+
+__pycache__/
+*.pyc

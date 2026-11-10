@@ -1,0 +1,4 @@
+ALTER TABLE "User" ADD COLUMN "bannedUntil" TIMESTAMP(3), ADD COLUMN "banReason" TEXT NOT NULL DEFAULT '', ADD COLUMN "banActorId" TEXT;
+CREATE TABLE "Report" ("id" TEXT NOT NULL PRIMARY KEY, "reporterId" TEXT NOT NULL, "targetType" TEXT NOT NULL, "targetId" TEXT NOT NULL, "reason" TEXT NOT NULL, "details" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'OPEN', "handlerId" TEXT, "resolution" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, FOREIGN KEY ("reporterId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE, FOREIGN KEY ("handlerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE);
+CREATE INDEX "Report_status_createdAt_id_idx" ON "Report"("status", "createdAt", "id");
+CREATE INDEX "Report_reporterId_createdAt_idx" ON "Report"("reporterId", "createdAt");

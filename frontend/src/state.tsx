@@ -1,4 +1,8 @@
+import { localizeApiError } from './i18n';
+import { useAppearance, useAppearanceRuntime, updateAppearance } from './appearance-store';
+import { translate as tr, useLanguage } from './i18n';
 import { coalescedRefresh } from './coalesced-refresh';
+import { soundSessionTimes } from './sound';
 import {
   createContext,
   useCallback,
@@ -39,6 +43,7 @@ export function useApp() {
   return value;
 }
 export function AppProvider({ children }: { children: ReactNode }) {
+  useLanguage();
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
     [csrfToken, setToken] = useState(""),
@@ -54,10 +59,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [sync, setSync] = useState(0),
     [notice, setNotice] = useState<{ message: string; error: boolean } | null>(
       null,
-    ),
-    [theme, setThemeState] = useState(
-      () => localStorage.getItem("harbor-theme") || "light",
     );
+  const { resolved: theme } = useAppearance();
+  useAppearanceRuntime(user?.id);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     authUserId = useRef<string | null>(null),
     deliveredIds = useRef(new Map<string, string>());
@@ -78,7 +82,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [login]);
   useEffect(() => {
     reloadUser()
-      .catch(e => { if (!(e instanceof ApiError && e.status === 401)) toast(e.message || "检查登录状态失败，请刷新重试", true); })
+      .catch(e => { if (!(e instanceof ApiError && e.status === 401)) toast(e.message || tr('screen420'), true); })
       .finally(() => setLoading(false));
   }, [reloadUser, toast]);
   const refreshPass = useCallback(async () => {
@@ -165,7 +169,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reconnectionDelayMax: 10000,
     });
     setSocket(client);
+    client.on('session:ready', (data: { serverTime: number }) => {
+      if (Number.isFinite(data.serverTime)) soundSessionTimes.set(client, data.serverTime);
+    });
     client.on("connect", () => {
+      soundSessionTimes.delete(client);
       setConnected(true);
       setSync((x) => x + 1);
       void refresh().catch(() => {});
@@ -176,7 +184,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     client.on("connect_error", () => setConnected(false));
     client.on("operation:error", (data: { error: string }) =>
-      toast(data.error, true),
+      toast(localizeApiError(data.error), true),
     );
     const update = () => {
       setSync((x) => x + 1);
@@ -216,12 +224,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id, csrfToken, refresh]);
   function setTheme(value: string) {
-    setThemeState(value);
-    localStorage.setItem("harbor-theme", value);
+    updateAppearance({ mode: value === 'light' || value === 'system' ? value : 'dark' });
   }
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
   return (
     <Context.Provider
       value={{
@@ -251,7 +255,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           role={notice.error ? "alert" : "status"}
         >
           <span>{notice.message}</span>
-          <button aria-label="关闭通知" onClick={() => setNotice(null)}>
+          <button aria-label={tr('screen421')} onClick={() => setNotice(null)}>
             ×
           </button>
         </div>

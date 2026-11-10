@@ -1,3 +1,10 @@
+import { getLanguage, translate as tr, useLanguage } from './i18n';
+import { ReportButton } from './reports';
+import { ForwardDialog } from './forward-dialog';
+import { AttachmentPreview } from './attachment-preview';
+import { MessageSearch } from './message-search';
+import { useSoundText } from './sound-ui';
+import { shouldSend, useSendShortcut } from './send-preference';
 import { TypingReporter } from './typing-reporter';
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
@@ -8,9 +15,9 @@ import {
   ArrowUpRight,
   Check,
   CheckCheck,
+  Forward,
   ChevronDown,
   Copy,
-  Download,
   File,
   Image,
   Info,
@@ -39,7 +46,6 @@ import {
   Dialog,
   Empty,
   ErrorBox,
-  Spinner,
   conversationTitle,
   conversationUser,
   formatTime,
@@ -70,6 +76,7 @@ const emojis = [
   "🌊",
 ];
 export function ChatPage() {
+  useLanguage();
   const { id } = useParams(),
     app = useApp(),
     { user, conversations, socket, sync, refresh, toast } = app;
@@ -90,6 +97,8 @@ export function ChatPage() {
     [editedText, setEditedText] = useState(""),
     [emojiOpen, setEmojiOpen] = useState(false),
     [infoOpen, setInfoOpen] = useState(false),
+    [atBottom, setAtBottom] = useState(true),
+    [firstUnreadId, setFirstUnreadId] = useState<string | null>(null),
     [group, setGroup] = useState(false),
     [typing, setTyping] = useState<Record<string, number>>({}),
     [confirm, setConfirm] = useState<{
@@ -104,12 +113,32 @@ export function ChatPage() {
     typingReporter = useRef<TypingReporter | null>(null),
     activeId = useRef(id),
     readIds = useRef(new Set<string>()),
+    followBottom = useRef(true),
     task = useTask(),
     navigate = useNavigate();
   const drafts = useRef(new Map<string, MediaDraft>());
   const sendLock = useRef(false);
+  const outbox = useRef<{ conversationId: string; pending: MediaDraft; reply: Message | null }[]>([]);
+  const alive = useRef(true);
+  const [failedSend, setFailedSend] = useState(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; if (!sendLock.current) { outbox.current.forEach(item => item.pending.clear()); outbox.current = []; } }; }, []);
+  const [sendShortcut] = useSendShortcut();
+  const t = useSoundText();
+  const [contextView, setContextView] = useState(false);
+  const [selecting, setSelecting] = useState(false), [forwardIds, setForwardIds] = useState<string[]>([]), [forwardOpen, setForwardOpen] = useState(false);
+  async function locateMessage(messageId: string) {
+    if (!id) return; const targetId = id;
+    const result = await api<{ messages: Message[]; hasMore: boolean }>(`/conversations/${id}/messages/${messageId}/context`);
+    if (activeId.current !== targetId) return;
+    followBottom.current = false; setContextView(true); setMessages(result.messages); setHasMore(result.hasMore);
+    requestAnimationFrame(() => {
+      const box = scroll.current, target = document.getElementById(`message-${messageId}`);
+      if (box && target && activeId.current === targetId) { box.scrollTop += target.getBoundingClientRect().top - box.getBoundingClientRect().top - box.clientHeight / 2; target.classList.add("located-message"); }
+    });
+  }
+  const scrollBottom = () => { const box = scroll.current; if (box) box.scrollTop = box.scrollHeight; };
   const queue = (key = id) => {
-    if (!key) throw Error('请先选择会话');
+    if (!key) throw Error(tr('screen423'));
     if (!drafts.current.has(key)) drafts.current.set(key, new MediaDraft());
     return drafts.current.get(key)!;
   };
@@ -119,6 +148,7 @@ export function ChatPage() {
   const load = useCallback(
     async (quiet = false) => {
       if (!id) return;
+      if (!quiet) followBottom.current = true;
       if (!quiet) setLoading(true);
       setError("");
       try {
@@ -130,6 +160,10 @@ export function ChatPage() {
         ]);
         if (activeId.current !== id) return;
         setConversation(c);
+        if (!quiet) {
+          const lastRead = c.members.find(m => m.userId === user?.id)?.lastReadAt;
+          setFirstUnreadId(c.unreadCount > 0 ? result.messages.find(m => m.senderId !== user?.id && (!lastRead || m.createdAt > lastRead))?.id || null : null);
+        }
         setMessages((old) => {
           if (!quiet || !old.length || !result.messages.length)
             return result.messages;
@@ -146,12 +180,12 @@ export function ChatPage() {
         setHasMore(result.hasMore);
         if (!quiet)
           setTimeout(
-            () => end.current?.scrollIntoView({ behavior: "instant" }),
+            () => { if (activeId.current === id && followBottom.current) scrollBottom(); },
             50,
           );
       } catch (e) {
         if (activeId.current === id)
-          setError(e instanceof Error ? e.message : "无法加载会话");
+          setError(e instanceof Error ? e.message : tr('screen424'));
       } finally {
         if (activeId.current === id) setLoading(false);
       }
@@ -159,7 +193,8 @@ export function ChatPage() {
     [id],
   );
   useEffect(() => {
-    setMessages([]);
+    setMessages([]); setAtBottom(true); setFirstUnreadId(null);
+    setContextView(false); setSelecting(false); setForwardIds([]); setForwardOpen(false);
     setConversation(null);
     setDraft(id ? queue(id).text : "");
     setReply(null);
@@ -172,26 +207,28 @@ export function ChatPage() {
   }, [sync, id, load]);
   useEffect(() => {
     const updated = conversations.find((c) => c.id === id);
-    if (updated) setConversation(old => ({ ...updated, canWrite: old?.canWrite }));
+    if (updated) setConversation(old => ({ ...updated, canWrite: old?.canWrite, mute: old?.mute, unreadAnnouncements: old?.unreadAnnouncements }));
   }, [conversations, id]);
+  useEffect(() => {
+    if (!id) return;
+    let stopped = false;
+    const reloadPermission = async () => {
+      try { const current = await api<Conversation>(`/conversations/${id}`); if (!stopped && activeId.current === id) setConversation(current); }
+      catch (e) { if (!stopped) setError(e instanceof Error ? e.message : t('groupActionFailed')); }
+    };
+    const changed = (data: { id: string }) => { if (data.id === id) void reloadPermission(); };
+    socket?.on('conversation:updated', changed);
+    const until = conversation?.mute?.until;
+    const timer = until ? setTimeout(() => void reloadPermission(), Math.min(2147483647, Math.max(0, new Date(until).getTime() - Date.now()) + 100)) : undefined;
+    return () => { stopped = true; socket?.off('conversation:updated', changed); if (timer) clearTimeout(timer); };
+  }, [id, socket, conversation?.mute?.until]);
   useEffect(() => {
     if (!socket || !id) return;
     const onMessage = (message: Message) => {
       if (message.conversationId !== id) return;
-      const nearBottom =
-        !scroll.current ||
-        scroll.current.scrollHeight -
-          scroll.current.scrollTop -
-          scroll.current.clientHeight <
-          160;
       setMessages((old) =>
         old.some((m) => m.id === message.id) ? old : old.concat(message),
       );
-      if (nearBottom || message.senderId === user!.id)
-        setTimeout(
-          () => end.current?.scrollIntoView({ behavior: "smooth" }),
-          50,
-        );
     };
     const onUpdate = (message: Message) => {
       if (message.conversationId === id)
@@ -248,7 +285,37 @@ export function ChatPage() {
       socket.off("receipt:updated", onReceipt);
     };
   }, [socket, id, user?.id]);
+  useEffect(() => {
+    const input = composer.current; if (!input) return;
+    input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+  }, [draft, id, loading]);
+  useEffect(() => {
+    const box = scroll.current;
+    if (!box) return;
+    let frame = 0;
+    // Keyboard/composer changes resize the scroller without creating a message.
+    // Keep the latest message visible only while the reader was following it.
+    const preserveLatest = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (scroll.current === box && followBottom.current) box.scrollTop = box.scrollHeight;
+      });
+    };
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(preserveLatest);
+    observer?.observe(box);
+    // Images may grow after lazy loading without resizing the scroller itself.
+    box.addEventListener('load', preserveLatest, true);
+    window.addEventListener('resize', preserveLatest);
+    return () => {
+      observer?.disconnect();
+      box.removeEventListener('load', preserveLatest, true);
+      window.removeEventListener('resize', preserveLatest);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [id, loading]);
   const latestId = messages.at(-1)?.id;
+  useEffect(() => { if (followBottom.current) scrollBottom(); }, [latestId]);
   useEffect(() => {
     if (!id || !latestId) return;
     const read = () => {
@@ -301,18 +368,21 @@ export function ChatPage() {
     if (!messages[0] || !id || olderLoading) return;
     setOlderLoading(true);
     const height = scroll.current?.scrollHeight || 0;
+    const previousTop = scroll.current?.scrollTop || 0;
+    const targetId = id;
     try {
       const result = await api<{ messages: Message[]; hasMore: boolean }>(
         `/conversations/${id}/messages?before=${encodeURIComponent(messages[0].id)}`,
       );
+      if (activeId.current !== targetId) return;
       setMessages((old) => [
         ...result.messages.filter((m) => !old.some((v) => v.id === m.id)),
         ...old,
       ]);
       setHasMore(result.hasMore);
       requestAnimationFrame(() => {
-        if (scroll.current)
-          scroll.current.scrollTop = scroll.current.scrollHeight - height;
+        if (scroll.current && activeId.current === targetId)
+          scroll.current.scrollTop = previousTop + scroll.current.scrollHeight - height;
       });
     } catch (e) {
       toast((e as Error).message, true);
@@ -336,41 +406,71 @@ export function ChatPage() {
     if (id) queue().text = value;
     typingReporter.current?.update(!!value);
   }
-  async function send(e?: FormEvent) {
-    e?.preventDefault();
-    if (conversation?.canWrite === false) return;
-    if (!id || sendLock.current || (!draft.trim() && !queue().items.length)) return;
-    const targetId = id, pending = queue(), content = draft.trim(), replyToId = reply?.id;
-    sendLock.current = true;
-    typingReporter.current?.stop();
-    setSending(true);
+  async function drainOutbox() {
+    if (sendLock.current || !outbox.current.length) return;
+    sendLock.current = true; setSending(true); setFailedSend(false);
     try {
-      setUploading(!!pending.items.length);
-      const attachmentIds = await pending.upload(chosen => {
-        if (activeId.current === targetId) { setUploadName(chosen.name); setUploadProgress(0); }
-        return uploadFile<Attachment>(chosen, progress => { if (activeId.current === targetId) setUploadProgress(progress); });
-      });
-      setUploading(false);
-      const result = await api<Message>(`/conversations/${targetId}/messages`, json('POST', pending.prepare(content, attachmentIds, replyToId)));
-      pending.clear();
-      if (activeId.current === targetId) {
-        setMessages(old => old.some(m => m.id === result.id) ? old : old.concat(result));
-        setDraft(''); setReply(null); renderDraft(v => v + 1);
-        end.current?.scrollIntoView({ behavior: 'smooth' });
-        if (composer.current) { composer.current.style.height = 'auto'; composer.current.focus(); }
+      while (outbox.current.length && alive.current) {
+        const item = outbox.current[0]!, targetId = item.conversationId, pending = item.pending;
+        try {
+          setUploading(!!pending.items.length);
+          const attachmentIds = await pending.upload(chosen => {
+            if (activeId.current === targetId) { setUploadName(chosen.name); setUploadProgress(0); }
+            return uploadFile<Attachment>(chosen, progress => { if (alive.current && activeId.current === targetId) setUploadProgress(progress); }, targetId);
+          });
+          setUploading(false);
+          const result = await api<Message>(`/conversations/${targetId}/messages`, json('POST', pending.prepare(pending.text.trim(), attachmentIds, item.reply?.id)));
+          outbox.current.shift();
+          // Normal success owns only its submitted snapshot. An asynchronous
+          // receipt must never rewrite the newer, independently editable draft.
+          const replacement = drafts.current.get(targetId) === pending ? new MediaDraft() : null;
+          if (replacement) drafts.current.set(targetId, replacement);
+          pending.clear();
+          if (alive.current && activeId.current === targetId) {
+            setMessages(old => old.some(m => m.id === result.id) ? old : old.concat(result));
+            // A failed draft may have been restored before another room resumed
+            // its retry. Clear only that exact replacement, rechecking on commit
+            // so later typing always wins over this lower-priority completion.
+            if (replacement) setDraft(current => drafts.current.get(targetId) === replacement && !replacement.text ? '' : current);
+            renderDraft(v => v + 1);
+          }
+          if (alive.current) void refresh().catch(error => toast((error as Error).message, true));
+        } catch (error) {
+          if (error instanceof ApiError && error.status >= 400 && error.status < 500) pending.rejected();
+          const current = drafts.current.get(targetId);
+          // A failed snapshot returns to the input if it would not replace new typing.
+          if (!current?.text && !current?.items.length) {
+            drafts.current.set(targetId, pending);
+            if (alive.current && activeId.current === targetId) { setDraft(pending.text); setReply(item.reply); }
+          }
+          if (alive.current) { setFailedSend(true); renderDraft(v => v + 1); toast((error as Error).message + tr('screen425'), true); }
+          break;
+        }
       }
-      void refresh().catch(() => {});
-    } catch (error) {
-      if (error instanceof ApiError && error.status >= 400 && error.status < 500) pending.rejected();
-      renderDraft(v => v + 1);
-      toast((error as Error).message + '；草稿已保留，可再次发送重试', true);
     } finally {
-      sendLock.current = false; setSending(false); setUploading(false);
+      sendLock.current = false;
+      if (alive.current) { setSending(false); setUploading(false); renderDraft(v => v + 1); }
+      else { outbox.current.forEach(item => item.pending.clear()); outbox.current = []; }
     }
+  }
+  function send(e?: FormEvent) {
+    e?.preventDefault();
+    if (conversation?.canWrite === false || !id) return;
+    const pending = queue();
+    if (!pending.text.trim() && !pending.items.length) return;
+    const existing = outbox.current.find(item => item.pending === pending);
+    if (!existing && outbox.current.length >= 20) { toast(tr('outboxFull'), true); return; }
+    if (existing) existing.reply = reply;
+    else outbox.current.push({ conversationId: id, pending, reply });
+    drafts.current.set(id, new MediaDraft());
+    setDraft(''); setReply(null); renderDraft(v => v + 1);
+    typingReporter.current?.stop();
+    if (composer.current) composer.current.style.height = 'auto';
+    void drainOutbox();
   }
   function upload(files: FileList | File[] | null) {
     if (conversation?.canWrite === false) return;
-    if (!files?.length || sendLock.current || !id) return;
+    if (!files?.length || !id) return;
     try { queue().stage(Array.from(files)); renderDraft(v => v + 1); }
     catch (error) { toast((error as Error).message, true); }
     if (file.current) file.current.value = '';
@@ -380,16 +480,15 @@ export function ChatPage() {
     .map(
       ([uid]) =>
         conversation?.members.find((m) => m.userId === uid)?.user.displayName ||
-        "对方",
+        tr('screen426'),
     );
   if (!id)
     return (
       <section className="welcome-chat">
         <div className="welcome-top">
-          <span>你的日常，从一句问候开始。</span>
+          <span>{tr('screen427')}</span>
           <span>
-            <span className="tiny-online" /> 连接彼此
-          </span>
+            <span className="tiny-online" /> {tr('screen428')}</span>
         </div>
         <div className="welcome-center">
           <div className="welcome-illustration" aria-hidden="true">
@@ -403,68 +502,58 @@ export function ChatPage() {
               <Sparkles size={23} />
             </span>
             <span className="floating-bubble">
-              嗨！<span>👋</span>
+              {tr('screen429')}<span>👋</span>
             </span>
             <span className="floating-dot" />
           </div>
-          <span className="eyebrow">让每一天，靠近一点</span>
+          <span className="eyebrow">{tr('screen430')}</span>
           <h1>
-            在这里，
-            <br />
-            与重要的人保持靠近<span>。</span>
+            {tr('screen431')}<br />
+            {tr('screen432')}<span>。</span>
           </h1>
           <p>
-            选择一段对话，或开启一段新的连接。
-            <br />
-            从日常小事，到闪光的想法，都有地方安放。
-          </p>
+            {tr('screen433')}<br />
+            {tr('screen434')}</p>
           <div className="welcome-actions">
             <Link to="/friends" className="btn btn-primary">
-              发现你的好友
-              <ArrowUpRight size={17} />
+              {tr('screen435')}<ArrowUpRight size={17} />
             </Link>
             <button
               className="btn btn-secondary"
               onClick={() => setGroup(true)}
             >
               <Plus size={17} />
-              创建群聊
-            </button>
+              {tr('screen333')}</button>
           </div>
         </div>
         <div className="welcome-bottom">
           <span>
-            <ShieldCheck size={16} /> 私密对话，由你掌握
-          </span>
+            <ShieldCheck size={16} /> {tr('screen436')}</span>
           <span>
-            <CheckCheck size={17} /> 跨设备，随时接续
-          </span>
+            <CheckCheck size={17} /> {tr('screen437')}</span>
           <span>
-            <Image size={16} /> 分享不止于文字
-          </span>
+            <Image size={16} /> {tr('screen438')}</span>
         </div>
         {group && <CreateGroup onClose={() => setGroup(false)} />}
       </section>
     );
-  if (loading) return <Spinner label="正在打开对话…" />;
+  if (loading) return <section className="chat-skeleton" role="status" aria-label={tr('uiChatLoading')}>{Array.from({length: 5}, (_, i) => <div key={i}><span className="skeleton-line" /><span className="skeleton-line" /></div>)}</section>;
   if (error)
     return (
       <div className="chat-error">
         <Link className="back-link" to="/chat">
-          <ArrowLeft size={17} /> 返回消息
-        </Link>
+          <ArrowLeft size={17} /> {tr('screen209')}</Link>
         <ErrorBox message={error} retry={() => void load()} />
       </div>
     );
   if (!conversation)
     return (
       <Empty
-        title="找不到这段对话"
-        description="会话可能已解散，或你已被移出。"
+        title={tr('screen440')}
+        description={tr('screen441')}
       >
         <Link to="/chat" className="btn btn-secondary">
-          返回消息
-        </Link>
+          {tr('screen209')}</Link>
       </Empty>
     );
   const title = conversationTitle(conversation, user!.id),
@@ -479,27 +568,27 @@ export function ChatPage() {
           <Link
             className="icon-btn mobile-back"
             to={isChannel ? `/servers/${conversation.channel?.serverId}` : "/chat"}
-            aria-label="返回列表"
+            aria-label={tr('screen442')}
           >
             <ArrowLeft size={22} />
           </Link>
           {isChannel ? <div className="channel-symbol"><Hash size={28} /></div> : <Avatar user={other} group={isGroup} showStatus={!isGroup} />}
           <div className="chat-header-title">
             <h1>
-              {title}
-              {isGroup && <span className="group-tag">{isChannel ? "文字频道" : "群聊"}</span>}
+              <span className="chat-title-text">{title}</span>
+              {isGroup && <span className="group-tag">{isChannel ? tr('screen443') : tr('screen217')}</span>}
             </h1>
             <span>
-              {isChannel ? conversation.description || "文字频道" : isGroup
-                ? `${conversation.members.length} 位成员 · ${conversation.members.filter((m) => m.user.status === "ONLINE").length} 人在线`
+              {isChannel ? conversation.description || tr('screen443') : isGroup
+                ? tr('screen444', {v0: conversation.members.length, v1: conversation.members.filter((m) => m.user.status === "ONLINE").length})
                 : statusText(other)}
             </span>
           </div>
-          <div className="chat-header-actions">
+          <div className="chat-header-actions"><button type="button" className="icon-btn forward-trigger" title={t(selecting ? "forwardCancel" : "forwardSelect")} aria-label={t(selecting ? "forwardCancel" : "forwardSelect")} onClick={() => { setSelecting(!selecting); setForwardIds([]); }}><Forward size={19} /></button><MessageSearch key={conversation.id} conversation={conversation} locate={locateMessage} />
             <button
               className={`icon-btn ${infoOpen ? "selected" : ""}`}
               onClick={() => setInfoOpen(!infoOpen)}
-              aria-label="查看会话信息"
+              aria-label={tr('screen445')}
               aria-expanded={infoOpen}
             >
               <Info size={21} />
@@ -508,21 +597,27 @@ export function ChatPage() {
               <Link
                 className="icon-btn"
                 to={isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`}
-                aria-label={isChannel ? "社区管理" : "群聊管理"}
+                aria-label={isChannel ? tr('screen446') : tr('screen214')}
               >
                 <MoreHorizontal size={23} />
               </Link>
             )}
           </div>
         </header>
+        {!!conversation.unreadAnnouncements && conversation.type === 'GROUP' && <Link className="announcement-banner" to={`/groups/${id}#announcements`}>{t('unreadAnnouncements', {count: conversation.unreadAnnouncements})}</Link>}
+        {conversation.mute && !writable && <p className="mute-banner" role="status">{tr('uiMuted')}</p>}
+        {contextView && <button className="btn btn-secondary" onClick={() => { setContextView(false); void load(); }}>{t("backLatest")}</button>}
+        {selecting && <button type="button" className="btn btn-primary" disabled={!forwardIds.length} onClick={() => setForwardOpen(true)}>{t("forwardCount", { count: forwardIds.length })}</button>}
         <div className="chat-security-note">
           <ShieldCheck size={12} />
-          <span>仅会话成员可访问聊天记录</span>
+          <span>{tr('screen447')}</span>
         </div>
         <div
           className="messages-scroll"
           ref={scroll}
           onScroll={() => {
+            const box = scroll.current;
+            if (box) { followBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 160; setAtBottom(followBottom.current); }
             if (
               scroll.current &&
               scroll.current.scrollTop < 60 &&
@@ -543,29 +638,27 @@ export function ChatPage() {
               ) : (
                 <ChevronDown size={14} />
               )}{" "}
-              加载更早的消息
-            </button>
+              {tr('screen448')}</button>
           )}
           {messages.length === 0 ? (
             <div className="conversation-start">
               {isChannel ? <div className="channel-symbol channel-symbol-large"><Hash size={40} /></div> : <Avatar user={other} group={isGroup} size="xl" />}
               <h2>
-                {isGroup ? "新的空间，新的对话" : `向 ${title} 打个招呼吧`}
+                {isGroup ? tr('screen449') : tr('screen450', {v0: title})}
               </h2>
               <p>
                 {isGroup
-                  ? "用第一条消息，开启这里的故事。"
-                  : "一句简单的问候，就是美好的开始。"}
+                  ? tr('screen451')
+                  : tr('screen452')}
               </p>
               <button
                 className="btn btn-secondary"
                 onClick={() => {
-                  updateDraft("嗨！很高兴在这里见到你 👋");
+                  updateDraft(tr('screen453'));
                   composer.current?.focus();
                 }}
               >
-                发送一个问候 👋
-              </button>
+                {tr('screen454')}</button>
             </div>
           ) : (
             messages.map((m, index) => {
@@ -576,10 +669,11 @@ export function ChatPage() {
                     new Date(m.createdAt).toDateString();
               return (
                 <div key={m.id} id={`message-${m.id}`}>
+                  {selecting && !m.retractedAt && <label className="forward-select"><input type="checkbox" checked={forwardIds.includes(m.id)} disabled={!forwardIds.includes(m.id) && forwardIds.length >= 20} onChange={e => setForwardIds(old => e.target.checked ? [...old, m.id] : old.filter(id => id !== m.id))} />{t("forwardSelected")}</label>}
                   {showDate && (
                     <div className="date-divider">
                       <span>
-                        {new Date(m.createdAt).toLocaleDateString("zh-CN", {
+                        {new Date(m.createdAt).toLocaleDateString(getLanguage(), {
                           month: "long",
                           day: "numeric",
                           weekday: "long",
@@ -587,10 +681,13 @@ export function ChatPage() {
                       </span>
                     </div>
                   )}
+                  {m.id === firstUnreadId && <div className="unread-divider" role="separator">{tr('uiUnreadDivider')}</div>}
                   <MessageRow
                     message={m}
                     conversation={conversation}
                     own={m.senderId === user!.id}
+                    onLocate={locateMessage}
+                    onForward={() => { setForwardIds([m.id]); setForwardOpen(true); }}
                     onReply={() => {
                       setReply(m);
                       composer.current?.focus();
@@ -601,8 +698,8 @@ export function ChatPage() {
                     }}
                     onRetract={() =>
                       setConfirm({
-                        title: "撤回这条消息？",
-                        description: "撤回后，所有成员将无法再查看此消息内容。",
+                        title: tr('screen455'),
+                        description: tr('screen456'),
                         run: async () => {
                           const result = await api<Message>(
                             `/messages/${m.id}/retract`,
@@ -617,9 +714,9 @@ export function ChatPage() {
                     }
                     onHide={() =>
                       setConfirm({
-                        title: "从你的记录中删除？",
+                        title: tr('screen457'),
                         description:
-                          "这条消息会从你的聊天记录中隐藏，其他成员仍可查看。",
+                          tr('screen458'),
                         run: async () => {
                           await api(`/messages/${m.id}`, json("DELETE"));
                           setMessages((old) =>
@@ -636,6 +733,7 @@ export function ChatPage() {
           )}
           <div ref={end} />
         </div>
+        {!atBottom && !contextView && <button type="button" className="btn btn-secondary jump-latest" onClick={() => { followBottom.current = true; setAtBottom(true); scrollBottom(); }}><ChevronDown size={16} />{t("backLatest")}</button>}
         <div className="typing-indicator" aria-live="polite">
           {selectedTyping.length > 0 && (
             <>
@@ -644,8 +742,7 @@ export function ChatPage() {
                 <i />
                 <i />
               </span>
-              {selectedTyping.join("、")} 正在输入…
-            </>
+              {selectedTyping.join("、")} {tr('screen459')}</>
           )}
         </div>
         <form className="composer-wrap" onSubmit={send}
@@ -655,32 +752,42 @@ export function ChatPage() {
             <div className="composer-reply">
               <Reply size={15} />
               <div>
-                <strong>回复 {reply.sender?.displayName || "消息"}</strong>
-                <p>{reply.content || "[文件]"}</p>
+                <strong>{tr('screen460')}{reply.sender?.displayName || tr('screen354')}</strong>
+                <p>{reply.content || tr('screen360')}</p>
               </div>
               <button
                 type="button"
                 className="icon-btn"
                 onClick={() => setReply(null)}
-                aria-label="取消回复"
+                aria-label={tr('screen461')}
               >
                 <X size={17} />
               </button>
             </div>
           )}
-          {!!media?.items.length && <div className="pending-media" aria-label="待发送附件">
+          {!!media?.items.length && <div className="pending-media" aria-label={tr('screen462')}>
             {media.items.map(item => <div className="pending-media-item" key={item.id}>
-              {item.preview ? <a href={item.preview} target="_blank" rel="noreferrer" aria-label={`预览 ${item.file.name}`}><img src={item.preview} alt={item.file.name} /></a> : <File size={24} />}
-              <span>{item.file.name}<small>{(item.file.size / 1024 / 1024).toFixed(2)} MiB{item.attachment ? ' · 已上传' : ' · 待发送'}</small></span>
-              <button type="button" className="icon-btn" disabled={sending || !!media.delivery} aria-label={`移除 ${item.file.name}`} onClick={() => { media.remove(item.id); renderDraft(v => v + 1); }}><X size={16} /></button>
+              {item.preview ? <a href={item.preview} target="_blank" rel="noreferrer" aria-label={tr('screen463', {v0: item.file.name})}><img src={item.preview} alt={item.file.name} /></a> : <File size={24} />}
+              <span>{item.file.name}<small>{(item.file.size / 1024 / 1024).toFixed(2)} {tr('mib')}{item.attachment ? tr('screen464') : tr('screen465')}</small></span>
+              <button type="button" className="icon-btn" disabled={!!media.delivery} aria-label={tr('screen466', {v0: item.file.name})} onClick={() => { media.remove(item.id); renderDraft(v => v + 1); }}><X size={16} /></button>
             </div>)}
           </div>}
-          {media?.delivery && !sending && <p className="form-error" role="status">消息确认失败，原内容已保留。请再次点击发送确认，确认前暂停编辑以避免重复消息。</p>}
-          {uploading && <div className="upload-progress" role="status"><span>{uploadProgress === 100 ? '正在验证文件' : `正在上传 ${uploadProgress}%`} · {uploadName}</span><progress max={100} value={uploadProgress} aria-label="文件上传进度" /></div>}
+          {outbox.current.length > 0 && <div className="outbox-status" role="status"><span>{tr(failedSend ? 'outboxFailed' : 'outboxPending', { count: outbox.current.length })}</span>{failedSend && <><p>{outbox.current[0]?.pending.text || tr('fileType')}</p><button type="button" className="btn btn-secondary" onClick={() => {
+            const first = outbox.current[0];
+            if (first && drafts.current.get(first.conversationId) === first.pending) {
+              drafts.current.set(first.conversationId, new MediaDraft());
+              if (activeId.current === first.conversationId) { setDraft(''); setReply(null); }
+            }
+            void drainOutbox();
+          }}>{tr('retry')}</button></>}</div>}
+          {media?.delivery && !sending && <p className="form-error" role="status">{tr('screen467')}</p>}
+          {uploading && <div className="upload-progress" role="status"><span>{uploadProgress === 100 ? tr('screen468') : tr('screen469', {v0: uploadProgress})} · {uploadName}</span><progress max={100} value={uploadProgress} aria-label={tr('screen470')} /></div>}
           <div className="composer">
             <textarea
               ref={composer}
-              disabled={!writable || sending || !!media?.delivery}
+              disabled={!writable}
+              readOnly={!!media?.delivery}
+              aria-busy={sending}
               onPaste={e => { const images = clipboardImages(e.clipboardData.items); if (images.length) { e.preventDefault(); upload(images); } }}
               rows={1}
               value={draft}
@@ -691,9 +798,7 @@ export function ChatPage() {
               }}
               onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
                 if (
-                  e.key === "Enter" &&
-                  !e.shiftKey &&
-                  !e.nativeEvent.isComposing
+                  shouldSend(e, sendShortcut)
                 ) {
                   e.preventDefault();
                   void send();
@@ -702,8 +807,8 @@ export function ChatPage() {
               onBlur={() =>
                 typingReporter.current?.stop()
               }
-              placeholder={!writable ? "此频道只读，或你正在被禁言" : `发送消息到 ${title}…`}
-              aria-label="消息内容"
+              placeholder={!writable ? tr('screen471') : tr('screen472', {v0: title})}
+              aria-label={tr('screen473')}
               maxLength={4000}
             />
             <div className="composer-toolbar">
@@ -712,7 +817,7 @@ export function ChatPage() {
                   type="button"
                   className={`icon-btn ${emojiOpen ? "selected" : ""}`}
                   onClick={() => setEmojiOpen(!emojiOpen)}
-                  aria-label="选择表情"
+                  aria-label={tr('screen474')}
                   aria-expanded={emojiOpen}
                 >
                   <Smile size={21} />
@@ -720,9 +825,9 @@ export function ChatPage() {
                 <button
                   type="button"
                   className="icon-btn"
-                  aria-label="添加图片或文件"
+                  aria-label={tr('screen475')}
                   onClick={() => file.current?.click()}
-                  disabled={!writable || uploading || sending}
+                  disabled={!writable || !!media?.delivery}
                 >
                   {uploading ? (
                     <LoaderCircle size={20} className="spin" />
@@ -739,23 +844,21 @@ export function ChatPage() {
                   onChange={(e) => void upload(e.target.files)}
                 />
                 <span className="composer-file-hint">
-                  图片 / 文件 · 最大 10 MiB · 可粘贴或拖入
-                </span>
+                  {tr('screen476')}</span>
               </div>
               <div>
                 <span className="send-hint">
-                  回车发送 <kbd>↵</kbd>
+                  {sendShortcut === "enter" ? tr('screen477') : tr('screen478')} <kbd>↵</kbd>
                 </span>
                 <button
                   type="submit"
                   className="send-button"
+                  onPointerDown={e => { if (document.activeElement === composer.current) e.preventDefault(); }}
                   disabled={
                     !writable ||
-                    sending ||
-                    uploading ||
                     (!draft.trim() && !media?.items.length)
                   }
-                  aria-label="发送消息"
+                  aria-label={tr('screen479')}
                 >
                   {sending ? (
                     <LoaderCircle size={17} className="spin" />
@@ -766,7 +869,7 @@ export function ChatPage() {
               </div>
             </div>
             {emojiOpen && (
-              <div className="emoji-palette" role="group" aria-label="表情选择">
+              <div className="emoji-palette" role="group" aria-label={tr('screen480')}>
                 {emojis.map((emoji) => (
                   <button
                     type="button"
@@ -776,7 +879,7 @@ export function ChatPage() {
                       setEmojiOpen(false);
                       composer.current?.focus();
                     }}
-                    aria-label={`插入 ${emoji}`}
+                    aria-label={tr('screen481', {v0: emoji})}
                   >
                     {emoji}
                   </button>
@@ -785,22 +888,23 @@ export function ChatPage() {
             )}
           </div>
           <div className="composer-footnote">
-            Shift + Enter 换行
-            <span>
+            {tr('screen482')}<span>
               {draft.length
                 ? `${draft.length} / 4000`
-                : "让每一句话，都有回应。"}
+                : tr('screen483')}
             </span>
           </div>
         </form>
       </div>
+      {forwardOpen && <ForwardDialog messages={messages.filter(m => forwardIds.includes(m.id))} close={() => setForwardOpen(false)} done={() => { setForwardOpen(false); setSelecting(false); setForwardIds([]); toast(t("forwardDone")); void refresh().catch(e => toast(e.message, true)); }} />}
       {infoOpen && (
+        <InfoPanel close={() => setInfoOpen(false)}>
         <aside className="conversation-info">
           <header>
-            <span>会话信息</span>
+            <span>{tr('screen484')}</span>
             <button
               className="icon-btn"
-              aria-label="关闭会话信息"
+              aria-label={tr('screen485')}
               onClick={() => setInfoOpen(false)}
             >
               <X size={18} />
@@ -811,19 +915,19 @@ export function ChatPage() {
             <h2>{title}</h2>
             <p>
               {isGroup
-                ? conversation.description || "一起聊聊，让想法自然发生。"
+                ? conversation.description || tr('screen486')
                 : (other as { bio?: string })?.bio ||
-                  "从一句问候开始，慢慢熟悉彼此。"}
+                  tr('screen487')}
             </p>
             <span className="info-badge">
               {isGroup ? <Users size={13} /> : <MessageCircle size={13} />}{" "}
-              {isGroup ? `${conversation.members.length} 位成员` : "好友私聊"}
+              {isGroup ? tr('screen488', {v0: conversation.members.length}) : tr('screen489')}
             </span>
           </div>
           {isGroup ? (
             <>
               <div className="info-section-title">
-                {isChannel ? "频道成员" : "群成员"} <span>{conversation.members.length}</span>
+                {isChannel ? tr('screen490') : tr('screen232')} <span>{conversation.members.length}</span>
               </div>
               <div className="info-member-list">
                 {conversation.members.map((m) => (
@@ -833,9 +937,9 @@ export function ChatPage() {
                       {m.user.displayName}
                       <small>
                         {m.role === "OWNER"
-                          ? (isChannel ? "所有者" : "群主")
+                          ? (isChannel ? tr('screen491') : tr('screen235'))
                           : m.role === "ADMIN"
-                            ? "管理员"
+                            ? tr('screen236')
                             : statusText(m.user)}
                       </small>
                     </span>
@@ -844,7 +948,7 @@ export function ChatPage() {
                 ))}
               </div>
               <Link to={isChannel ? `/servers/${conversation.channel?.serverId}/settings` : `/groups/${id}`} className="btn btn-secondary">
-                {isChannel ? "社区成员与管理" : "管理群聊"} <ArrowRight size={15} />
+                {isChannel ? tr('screen492') : tr('screen493')} <ArrowRight size={15} />
               </Link>
             </>
           ) : (
@@ -854,22 +958,22 @@ export function ChatPage() {
                 navigate(`/profile/${(other as { id?: string })?.id}`)
               }
             >
-              查看个人资料
-              <ArrowUpRight size={15} />
+              {tr('screen494')}<ArrowUpRight size={15} />
             </button>
           )}
+          <div className="info-section-title">{tr('uiInfoFiles')}</div>
+          <section className="info-files"><p>{tr('uiInfoFilesHint')}</p>{messages.flatMap(m => m.attachments).length ? messages.flatMap(m => m.attachments).map(a => <AttachmentPreview key={a.id} attachment={a} />) : <p>{tr('uiNoFiles')}</p>}</section>
           <div className="info-privacy">
             <ShieldCheck size={20} />
             <p>
-              这个空间，属于你们。
-              <br />
-              <small>成员权限在服务端验证。</small>
+              {tr('screen495')}<br />
+              <small>{tr('screen496')}</small>
             </p>
           </div>
-        </aside>
+        </aside></InfoPanel>
       )}
       {editing && (
-        <Dialog title="编辑消息" onClose={() => setEditing(null)}>
+        <Dialog title={tr('screen497')} onClose={() => setEditing(null)}>
           <form
             className="form-stack"
             onSubmit={async (e) => {
@@ -890,8 +994,7 @@ export function ChatPage() {
             }}
           >
             <label>
-              消息内容
-              <textarea
+              {tr('screen473')}<textarea
                 value={editedText}
                 onChange={(e) => setEditedText(e.target.value)}
                 required
@@ -899,7 +1002,7 @@ export function ChatPage() {
                 rows={5}
               />
             </label>
-            <button className="btn btn-primary">保存修改</button>
+            <button className="btn btn-primary">{tr('screen231')}</button>
           </form>
         </Dialog>
       )}
@@ -911,18 +1014,16 @@ export function ChatPage() {
               className="btn btn-secondary"
               onClick={() => setConfirm(null)}
             >
-              取消
-            </button>
+              {tr('cancel')}</button>
             <button
               className="btn btn-danger"
               onClick={async () => {
                 const run = confirm.run;
                 setConfirm(null);
-                await task(run, "操作已完成");
+                await task(run, tr('screen260'));
               }}
             >
-              确认操作
-            </button>
+              {tr('screen498')}</button>
           </div>
         </Dialog>
       )}
@@ -937,6 +1038,8 @@ function MessageRow({
   onEdit,
   onRetract,
   onHide,
+  onLocate,
+  onForward,
 }: {
   message: Message;
   conversation: Conversation;
@@ -945,7 +1048,11 @@ function MessageRow({
   onEdit: () => void;
   onRetract: () => void;
   onHide: () => void;
+  onLocate: (id: string) => Promise<void>;
+  onForward?: () => void;
 }) {
+  useLanguage();
+  const t = useSoundText();
   const [menu, setMenu] = useState(false),
     { toast } = useApp();
   const peers = conversation.members.filter((v) => v.userId !== m.senderId),
@@ -962,7 +1069,7 @@ function MessageRow({
   if (m.retractedAt || m.deletedAt)
     return (
       <div className="retracted-message">
-        {own ? "你" : m.sender?.displayName || "对方"}撤回了一条消息{" "}
+        {own ? tr('screen499') : m.sender?.displayName || tr('screen426')}{tr('screen500')}{" "}
         <span>{formatTime(m.createdAt)}</span>
       </div>
     );
@@ -971,126 +1078,88 @@ function MessageRow({
       <Link
         className="message-avatar"
         to={`/profile/${m.senderId}`}
-        aria-label={`查看 ${m.sender?.displayName || "用户"} 的资料`}
+        aria-label={tr('screen501', {v0: m.sender?.displayName || tr('genericUser')})}
       >
         <Avatar user={m.sender} size="sm" />
       </Link>
       <div className="message-column">
         <div className="message-meta">
-          <strong>{own ? "你" : m.sender?.displayName || "用户"}</strong>
+          <strong>{own ? tr('screen499') : m.sender?.displayName || tr('screen281')}</strong>
           <time dateTime={m.createdAt}>{formatTime(m.createdAt)}</time>
         </div>
         <div className="message-body">
           {m.replyTo && (
             <button
               className="reply-preview"
-              onClick={() =>
-                document
-                  .getElementById(`message-${m.replyTo!.id}`)
-                  ?.scrollIntoView({ behavior: "smooth", block: "center" })
-              }
+              onClick={() => void onLocate(m.replyTo!.id).catch(e => toast(t(e instanceof ApiError && e.status === 404 ? 'deletedOriginal' : 'searchError'), true))}
             >
               <Reply size={13} />
               <span>
-                <strong>{m.replyTo.sender?.displayName || "消息"}</strong>
+                <strong>{m.replyTo.sender?.displayName || tr('screen354')}</strong>
                 <span>
                   {m.replyTo.retractedAt
-                    ? "消息已撤回"
-                    : m.replyTo.content || "[文件]"}
+                    ? t("deletedOriginal")
+                    : m.replyTo.content || t(m.replyTo.attachments?.some(a => a.mimeType.startsWith('image/')) ? 'imageType' : 'fileType')}
                 </span>
               </span>
             </button>
           )}
+          {m.forwardedFrom && <p className="forwarded-label">{t("forwardedLabel", { name: m.forwardedFrom.senderName })}</p>}
           {m.content && <div className="message-content">{m.content}</div>}
-          {m.attachments?.map((a) => (
-            <div className="message-attachment" key={a.id}>
-              {a.mimeType.startsWith("image/") ? (
-                <a
-                  href={a.url || `/api/uploads/${a.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <img
-                    src={a.url || `/api/uploads/${a.id}`}
-                    alt={a.originalName || a.filename || "聊天图片"}
-                    loading="lazy"
-                  />
-                </a>
-              ) : (
-                <a
-                  href={a.url || `/api/uploads/${a.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="file-card"
-                >
-                  <span className="file-icon">
-                    <File size={23} />
-                  </span>
-                  <span>
-                    <strong>{a.originalName || a.filename || "文件"}</strong>
-                    <small>
-                      {a.size < 1024 * 1024
-                        ? `${Math.ceil(a.size / 1024)} KB`
-                        : `${(a.size / 1024 / 1024).toFixed(1)} MB`}{" "}
-                      · PDF 文件
-                    </small>
-                  </span>
-                  <Download size={17} />
-                </a>
-              )}
-            </div>
-          ))}
+          {m.attachments?.map(a => <AttachmentPreview key={a.id} attachment={a} />)}
         </div>
         <div className="message-footer">
-          {m.editedAt && <span>已编辑</span>}
+          {m.editedAt && <span>{tr('screen502')}</span>}
           {own && (
             <span
               className={`message-receipt ${read ? "read" : ""}`}
-              title={read ? "所有成员已读" : delivered ? "已送达" : "已发送"}
+              title={read ? tr('screen503') : delivered ? tr('screen504') : tr('screen505')}
             >
               {read || delivered ? (
                 <CheckCheck size={14} />
               ) : (
                 <Check size={14} />
               )}{" "}
-              {read ? "已读" : delivered ? "已送达" : "已发送"}
+              {read ? tr('screen506') : delivered ? tr('screen504') : tr('screen505')}
             </span>
           )}
         </div>
       </div>
-      <div className="message-tools">
+      <div className="message-tools"><ReportButton targetType="MESSAGE" targetId={m.id} />
         <button
           className="icon-btn"
           onClick={onReply}
-          aria-label="回复消息"
-          title="回复"
+          aria-label={tr('screen507')}
+          title={tr('screen460')}
         >
           <Reply size={16} />
         </button>
         <button
-          className="icon-btn"
+          className="icon-btn message-more"
           onClick={() => setMenu(!menu)}
-          aria-label="更多消息操作"
+          aria-label={tr('screen508')}
           aria-expanded={menu}
         >
           <MoreHorizontal size={18} />
         </button>
         {menu && (
-          <div className="message-menu">
+          <div className="message-menu" role="group" aria-label={tr('screen508')} onKeyDown={e => { if (e.key === "Escape") setMenu(false); }}>
+            <button className="message-reply-mobile" onClick={() => { setMenu(false); onReply(); }}><Reply size={14} />{tr('screen507')}</button>
+            {onForward && <button onClick={() => { setMenu(false); onForward(); }}><Forward size={14} />{t("forwardSelect")}</button>}
+            <ReportButton targetType="MESSAGE" targetId={m.id} />
             <button
               onClick={() => {
                 setMenu(false);
                 const copy = navigator.clipboard?.writeText(m.id);
                 if (copy)
                   void copy
-                    .then(() => toast("消息 ID 已复制"))
-                    .catch(() => toast(`消息 ID：${m.id}`));
-                else toast(`消息 ID：${m.id}`);
+                    .then(() => toast(tr('screen509')))
+                    .catch(() => toast(tr('screen510', {v0: m.id})));
+                else toast(tr('screen510', {v0: m.id}));
               }}
             >
               <Copy size={14} />
-              复制消息 ID
-            </button>
+              {tr('screen511')}</button>
             {own && (
               <>
                 <button
@@ -1100,8 +1169,7 @@ function MessageRow({
                   }}
                 >
                   <Pencil size={14} />
-                  编辑
-                </button>
+                  {tr('screen512')}</button>
                 <button
                   onClick={() => {
                     setMenu(false);
@@ -1109,8 +1177,7 @@ function MessageRow({
                   }}
                 >
                   <Reply size={14} />
-                  撤回
-                </button>
+                  {tr('screen513')}</button>
               </>
             )}
             <button
@@ -1120,11 +1187,16 @@ function MessageRow({
               }}
             >
               <Trash2 size={14} />
-              删除此消息
-            </button>
+              {tr('screen514')}</button>
           </div>
         )}
       </div>
     </article>
   );
+}
+
+function InfoPanel({children, close}: {children: import('react').ReactNode; close: () => void}) {
+ const [overlay, setOverlay] = useState(() => window.matchMedia('(max-width:1279px)').matches);
+ useEffect(() => { const media = window.matchMedia('(max-width:1279px)'); const update = () => setOverlay(media.matches); media.addEventListener('change',update); return () => media.removeEventListener('change',update); },[]);
+ return overlay ? <Dialog title={tr('screen484')} className="info-dialog" onClose={close}>{children}</Dialog> : <>{children}</>;
 }

@@ -1,13 +1,16 @@
+import { AppearanceSettings } from './appearance';
+import { translate as tr, useLanguage } from './i18n';
+import { NotificationSettings } from './notification-ui';
+import { SoundSettingsPanel } from './sound-ui';
+import { useSendShortcut } from './send-preference';
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowUpRight,
   Ban,
-  Check,
   ChevronRight,
   KeyRound,
   LogOut,
-  Moon,
   ShieldCheck,
   Sun,
   UserRound,
@@ -17,7 +20,9 @@ import { useApp } from "./state";
 import type { User } from "./types";
 import { Avatar, Dialog, Empty, PageHeading, useTask } from "./ui";
 export function SettingsPage() {
-  const { user, theme, setTheme, reloadUser, socket, logout, toast } = useApp(),
+  useLanguage();
+  const [sendShortcut, setSendShortcut] = useSendShortcut();
+  const { user, reloadUser, socket, logout, toast } = useApp(),
     [blocks, setBlocks] = useState<User[]>([]),
     [busy, setBusy] = useState(false),
     [changePassword, setChangePassword] = useState(false),
@@ -41,33 +46,31 @@ export function SettingsPage() {
     <div className="page-scroll">
       <div className="page-content settings-page">
         <PageHeading
-          eyebrow="泊岸 · 你的交流空间"
-          title="设置"
-          description="按自己的节奏，享受每一次交流。"
+          eyebrow={tr('screen213')}
+          title={tr('screen349')}
+          description={tr('screen367')}
         />
         <div className="settings-grid">
-          <nav className="settings-nav" aria-label="设置分区">
+          <nav className="settings-nav" aria-label={tr('screen368')}>
             <a href="#account">
               <UserRound size={17} />
-              账号与状态
-            </a>
+              {tr('screen369')}</a>
             <a href="#appearance">
               <Sun size={17} />
-              外观主题
-            </a>
+              {tr('screen370')}</a>
             <a href="#security">
               <ShieldCheck size={17} />
-              安全与隐私
-            </a>
+              {tr('screen371')}</a>
             <a href="#blocked">
               <Ban size={17} />
-              屏蔽列表 <span>{blocks.length}</span>
+              {tr('screen372')}<span>{blocks.length}</span>
             </a>
           </nav>
-          <div className="settings-main">
+          <div className="settings-main"><SoundSettingsPanel /><NotificationSettings />
+            <section className="settings-section"><h2>{tr('screen373')}</h2><label>{tr('screen374')}<select value={sendShortcut} onChange={e => setSendShortcut(e.target.value === "modifier" ? "modifier" : "enter")}><option value="enter">{tr('screen375')}</option><option value="modifier">{tr('screen376')}</option></select></label></section>
             <section className="settings-section" id="account">
-              <h2>账号与状态</h2>
-              <p>管理个人资料，让朋友知道你是否方便聊天。</p>
+              <h2>{tr('screen369')}</h2>
+              <p>{tr('screen377')}</p>
               <Link to="/profile" className="settings-profile">
                 <Avatar user={user} size="lg" />
                 <div>
@@ -75,13 +78,13 @@ export function SettingsPage() {
                   <span>@{user!.username}</span>
                 </div>
                 <span>
-                  编辑资料 <ChevronRight size={16} />
+                  {tr('screen378')}<ChevronRight size={16} />
                 </span>
               </Link>
               <div className="setting-row">
                 <div>
-                  <strong>当前状态</strong>
-                  <small>多设备在线状态会自动同步</small>
+                  <strong>{tr('screen379')}</strong>
+                  <small>{tr('screen380')}</small>
                 </div>
                 <div className="segmented">
                   <button
@@ -89,87 +92,44 @@ export function SettingsPage() {
                     onClick={() => void status("ONLINE")}
                   >
                     <i className="online-dot" />
-                    在线
-                  </button>
+                    {tr('screen317')}</button>
                   <button
                     className={user!.status === "BUSY" ? "selected" : ""}
                     onClick={() => void status("BUSY")}
                   >
                     <i className="busy-dot" />
-                    忙碌
-                  </button>
+                    {tr('screen381')}</button>
                 </div>
               </div>
             </section>
-            <section className="settings-section" id="appearance">
-              <h2>外观主题</h2>
-              <p>为你此刻的环境，选择舒适的色调。</p>
-              <div className="theme-options">
-                <button
-                  className={`theme-choice ${theme === "light" ? "selected" : ""}`}
-                  onClick={() => setTheme("light")}
-                >
-                  <span className="theme-preview preview-light">
-                    <i />
-                    <div>
-                      <i />
-                      <i />
-                      <i />
-                    </div>
-                  </span>
-                  <span>
-                    <Sun size={16} />
-                    亮色模式{theme === "light" && <Check size={16} />}
-                  </span>
-                </button>
-                <button
-                  className={`theme-choice ${theme === "dark" ? "selected" : ""}`}
-                  onClick={() => setTheme("dark")}
-                >
-                  <span className="theme-preview preview-dark">
-                    <i />
-                    <div>
-                      <i />
-                      <i />
-                      <i />
-                    </div>
-                  </span>
-                  <span>
-                    <Moon size={16} />
-                    深色模式{theme === "dark" && <Check size={16} />}
-                  </span>
-                </button>
-              </div>
-            </section>
+            <AppearanceSettings />
             <section className="settings-section" id="security">
-              <h2>安全与隐私</h2>
-              <p>独立的强密码，守护你的聊天空间。</p>
+              <h2>{tr('screen371')}</h2>
+              <p>{tr('screen385')}</p>
               <div className="setting-row">
                 <div>
-                  <strong>账号密码</strong>
-                  <small>密码加密存储，修改后所有设备将退出登录</small>
+                  <strong>{tr('screen386')}</strong>
+                  <small>{tr('screen387')}</small>
                 </div>
                 <button
                   className="btn btn-secondary btn-small"
                   onClick={() => setChangePassword(true)}
                 >
                   <KeyRound size={15} />
-                  修改密码
-                </button>
+                  {tr('screen388')}</button>
               </div>
               <div className="security-information">
                 <ShieldCheck size={20} />
                 <p>
-                  登录会话通过 HttpOnly Cookie 保护，消息与文件由成员权限控制。
-                  <strong>服务不提供端到端加密。</strong>
+                  {tr('screen389')}<strong>{tr('screen390')}</strong>
                 </p>
               </div>
             </section>
             <section className="settings-section" id="blocked">
               <h2>
-                屏蔽列表 <span className="count-pill">{blocks.length}</span>
+                {tr('screen372')}<span className="count-pill">{blocks.length}</span>
               </h2>
-              <p>被屏蔽的用户无法向你申请好友或发送私聊消息。</p>
+              <p>{tr('screen391')}</p>
               {blocks.length ? (
                 blocks.map((u) => (
                   <div className="blocked-row" key={u.id}>
@@ -184,44 +144,42 @@ export function SettingsPage() {
                         void task(async () => {
                           await api(`/blocks/${u.id}`, json("DELETE"));
                           setBlocks((old) => old.filter((v) => v.id !== u.id));
-                        }, "已解除屏蔽")
+                        }, tr('screen392'))
                       }
                     >
-                      解除屏蔽
-                    </button>
+                      {tr('screen393')}</button>
                   </div>
                 ))
               ) : (
                 <Empty
                   icon={<Ban size={25} />}
-                  title="你的屏蔽列表是空的"
-                  description="可以在用户资料页屏蔽某位用户。"
+                  title={tr('screen394')}
+                  description={tr('screen395')}
                 />
               )}
             </section>
             <div className="settings-signout">
               <div>
-                <strong>离开一会儿？</strong>
-                <p>退出只会结束当前登录会话。</p>
+                <strong>{tr('screen396')}</strong>
+                <p>{tr('screen397')}</p>
               </div>
               <button
                 className="btn btn-secondary"
                 onClick={() => setConfirmLogout(true)}
               >
                 <LogOut size={16} />
-                退出登录
-              </button>
+                {tr('screen352')}</button>
             </div>
             <div className="settings-version">
-              HARBOR · 泊岸 <span>Version 1.0.0</span>
+              {tr('screen398')}<span>{tr('versionLabel', {version: '1.0.0'})}</span>
               <Link to="/chat">
-                继续聊天 <ArrowUpRight size={13} />
+                {tr('screen399')}<ArrowUpRight size={13} />
               </Link>
             </div>
           </div>
         </div>
         {changePassword && (
-          <Dialog title="修改账号密码" onClose={() => setChangePassword(false)}>
+          <Dialog title={tr('screen400')} onClose={() => setChangePassword(false)}>
             <form
               className="form-stack"
               onSubmit={async (e) => {
@@ -245,11 +203,9 @@ export function SettingsPage() {
               }}
             >
               <p className="muted">
-                修改成功后，所有设备会退出登录。请使用新密码重新登录。
-              </p>
+                {tr('screen401')}</p>
               <label>
-                当前密码
-                <input
+                {tr('screen402')}<input
                   name="currentPassword"
                   type="password"
                   autoComplete="current-password"
@@ -258,39 +214,36 @@ export function SettingsPage() {
                 />
               </label>
               <label>
-                新密码
-                <input
+                {tr('auth42')}<input
                   name="newPassword"
                   type="password"
                   autoComplete="new-password"
                   required
                   minLength={12}
                   maxLength={72}
-                  placeholder="至少 12 个字符"
+                  placeholder={tr('screen403')}
                 />
               </label>
               <button className="btn btn-primary" disabled={busy}>
-                {busy ? "正在更新…" : "确认修改"}
+                {busy ? tr('screen404') : tr('screen405')}
               </button>
             </form>
           </Dialog>
         )}
         {confirmLogout && (
-          <Dialog title="退出泊岸？" onClose={() => setConfirmLogout(false)}>
-            <p className="muted">聊天记录会保留，随时欢迎回来。</p>
+          <Dialog title={tr('screen406')} onClose={() => setConfirmLogout(false)}>
+            <p className="muted">{tr('screen407')}</p>
             <div className="dialog-actions">
               <button
                 className="btn btn-secondary"
                 onClick={() => setConfirmLogout(false)}
               >
-                继续聊天
-              </button>
+                {tr('screen399')}</button>
               <button
                 className="btn btn-primary"
                 onClick={() => void task(logout)}
               >
-                退出登录
-              </button>
+                {tr('screen352')}</button>
             </div>
           </Dialog>
         )}

@@ -1,3 +1,7 @@
+import { translate as tr, useLanguage } from './i18n';
+import { useVisualViewport } from './viewport';
+import { NotificationRuntime } from './notification-ui';
+import { SoundRuntime } from './sound-ui';
 import React from "react";
 import ReactDOM from "react-dom/client";
 import {
@@ -20,13 +24,14 @@ import { AdminPage } from "./admin";
 import { Brand, Spinner } from "./ui";
 import "./styles.css";
 function Guard() {
+  useLanguage();
   const { user, loading } = useApp(),
     location = useLocation();
   if (loading)
     return (
       <div className="app-bootstrap">
         <Brand />
-        <Spinner label="正在连接你的空间…" />
+        <Spinner label={tr('screen422')} />
       </div>
     );
   return user ? (
@@ -36,9 +41,12 @@ function Guard() {
   );
 }
 function App() {
+  useVisualViewport();
+  useLanguage();
   return (
     <BrowserRouter>
       <AppProvider>
+        <SoundRuntime /><NotificationRuntime />
         <Routes>
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/login" element={<AuthPage key="login" mode="login" />} />

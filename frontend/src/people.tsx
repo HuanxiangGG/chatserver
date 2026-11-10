@@ -1,3 +1,5 @@
+import { translate as tr, useLanguage } from './i18n';
+import { ReportButton } from './reports';
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -27,6 +29,7 @@ import {
   useTask,
 } from "./ui";
 export function FriendsPage() {
+  useLanguage();
   const { friends, requests, refresh, user, toast } = useApp(),
     [tab, setTab] = useState<"friends" | "requests" | "find">("friends"),
     [query, setQuery] = useState(""),
@@ -55,7 +58,7 @@ export function FriendsPage() {
         await api(`/friend-requests/${id}/respond`, json("POST", { accept }));
         await refresh();
       },
-      accept ? "你们已经是好友了" : "已拒绝好友申请",
+      accept ? tr('screen515') : tr('screen516'),
     );
   }
   const visible = friends.filter((f) =>
@@ -67,9 +70,9 @@ export function FriendsPage() {
     <div className="page-scroll">
       <div className="page-content">
         <PageHeading
-          eyebrow="泊岸 · 你的交流空间"
-          title="好友"
-          description="把重要的人，放在触手可及的地方。"
+          eyebrow={tr('screen213')}
+          title={tr('screen341')}
+          description={tr('screen517')}
           action={
             <button
               className="btn btn-primary"
@@ -80,8 +83,7 @@ export function FriendsPage() {
               }}
             >
               <UserPlus size={17} />
-              添加好友
-            </button>
+              {tr('screen518')}</button>
           }
         />
         <div className="page-tabs">
@@ -92,14 +94,13 @@ export function FriendsPage() {
               setQuery("");
             }}
           >
-            我的好友 <span>{friends.length}</span>
+            {tr('screen519')}<span>{friends.length}</span>
           </button>
           <button
             className={tab === "requests" ? "active" : ""}
             onClick={() => setTab("requests")}
           >
-            好友申请
-            {requests.incoming.length > 0 && (
+            {tr('screen520')}{requests.incoming.length > 0 && (
               <span className="request-badge">{requests.incoming.length}</span>
             )}
           </button>
@@ -110,8 +111,7 @@ export function FriendsPage() {
               setQuery("");
             }}
           >
-            发现好友
-          </button>
+            {tr('screen521')}</button>
         </div>
         {tab === "friends" && (
           <>
@@ -121,13 +121,12 @@ export function FriendsPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索好友昵称或用户名"
-                  aria-label="搜索好友"
+                  placeholder={tr('screen522')}
+                  aria-label={tr('screen523')}
                 />
               </div>
               <span className="muted">
-                {friends.filter((f) => f.status !== "OFFLINE").length} 人在线
-              </span>
+                {friends.filter((f) => f.status !== "OFFLINE").length} {tr('screen524')}</span>
             </div>
             {visible.length ? (
               <div className="people-grid">
@@ -141,7 +140,7 @@ export function FriendsPage() {
                       </div>
                     </Link>
                     <p className="person-bio">
-                      {f.bio || "期待与你分享生活中的点滴。"}
+                      {f.bio || tr('screen525')}
                     </p>
                     <div className="person-status">
                       <span
@@ -153,8 +152,8 @@ export function FriendsPage() {
                       <button
                         className="icon-btn danger-subtle"
                         onClick={() => setConfirm(f)}
-                        aria-label={`删除好友 ${f.displayName}`}
-                        title="删除好友"
+                        aria-label={tr('screen526', {v0: f.displayName})}
+                        title={tr('screen527')}
                       >
                         <UserMinus size={17} />
                       </button>
@@ -164,8 +163,7 @@ export function FriendsPage() {
                       onClick={() => void start(f)}
                     >
                       <MessageCircle size={16} />
-                      发送消息
-                      <ArrowUpRight size={15} />
+                      {tr('screen479')}<ArrowUpRight size={15} />
                     </button>
                   </article>
                 ))}
@@ -173,11 +171,11 @@ export function FriendsPage() {
             ) : (
               <Empty
                 icon={<Users size={30} />}
-                title={query ? "没有匹配的好友" : "你的好友列表，等待新的相遇"}
+                title={query ? tr('screen528') : tr('screen529')}
                 description={
                   query
-                    ? "换个昵称或用户名试试看。"
-                    : "搜索朋友的用户名，发送第一份好友邀请。"
+                    ? tr('screen530')
+                    : tr('screen531')
                 }
               >
                 {!query && (
@@ -188,7 +186,7 @@ export function FriendsPage() {
                       setSearched(false);
                     }}
                   >
-                    发现好友 <ArrowUpRight size={16} />
+                    {tr('screen521')}<ArrowUpRight size={16} />
                   </button>
                 )}
               </Empty>
@@ -199,7 +197,7 @@ export function FriendsPage() {
           <div className="request-sections">
             <section>
               <div className="section-label">
-                收到的申请 <span>{requests.incoming.length}</span>
+                {tr('screen532')}<span>{requests.incoming.length}</span>
               </div>
               {requests.incoming.length ? (
                 requests.incoming.map((r) => {
@@ -211,34 +209,31 @@ export function FriendsPage() {
                         <Link to={`/profile/${person?.id}`}>
                           <strong>{person?.displayName}</strong>
                         </Link>
-                        <p>@{person?.username} 想成为你的好友</p>
+                        <p>@{person?.username} {tr('screen533')}</p>
                       </div>
                       <button
                         className="btn btn-secondary btn-small"
                         onClick={() => void respond(r.id, false)}
                       >
                         <X size={15} />
-                        拒绝
-                      </button>
+                        {tr('screen534')}</button>
                       <button
                         className="btn btn-primary btn-small"
                         onClick={() => void respond(r.id, true)}
                       >
                         <Check size={15} />
-                        接受
-                      </button>
+                        {tr('screen535')}</button>
                     </div>
                   );
                 })
               ) : (
                 <div className="inline-empty">
-                  <Check size={20} /> 暂时没有待处理的申请
-                </div>
+                  <Check size={20} /> {tr('screen536')}</div>
               )}
             </section>
             <section>
               <div className="section-label">
-                发出的申请 <span>{requests.outgoing.length}</span>
+                {tr('screen537')}<span>{requests.outgoing.length}</span>
               </div>
               {requests.outgoing.length ? (
                 requests.outgoing.map((r) => {
@@ -252,13 +247,12 @@ export function FriendsPage() {
                       </div>
                       <span className="pending-pill">
                         <Clock size={13} />
-                        等待回应
-                      </span>
+                        {tr('screen538')}</span>
                     </div>
                   );
                 })
               ) : (
-                <div className="inline-empty">你还没有发出好友申请</div>
+                <div className="inline-empty">{tr('screen539')}</div>
               )}
             </section>
           </div>
@@ -283,9 +277,9 @@ export function FriendsPage() {
               }}
             >
               <div>
-                <span className="eyebrow">SAY HELLO</span>
-                <h2>找到你的朋友</h2>
-                <p>输入用户名或昵称，开启一段新的连接。</p>
+                <span className="eyebrow">{tr('helloKicker')}</span>
+                <h2>{tr('screen540')}</h2>
+                <p>{tr('screen541')}</p>
               </div>
               <div className="find-search">
                 <Search size={20} />
@@ -295,16 +289,16 @@ export function FriendsPage() {
                   required
                   minLength={2}
                   maxLength={64}
-                  placeholder="搜索用户名或昵称，至少 2 个字符"
-                  aria-label="搜索用户"
+                  placeholder={tr('screen542')}
+                  aria-label={tr('screen278')}
                 />
                 <button className="btn btn-primary" disabled={searching}>
-                  {searching ? "搜索中…" : "搜索"}
+                  {searching ? tr('screen543') : tr('searchButton')}
                 </button>
               </div>
             </form>
             {searching ? (
-              <Spinner label="正在寻找…" />
+              <Spinner label={tr('screen544')} />
             ) : searched ? (
               found.filter((u) => u.id !== user!.id).length ? (
                 <div className="search-results">
@@ -320,7 +314,7 @@ export function FriendsPage() {
                             <strong>{u.displayName}</strong>
                           </Link>
                           <p>
-                            @{u.username} · {u.bio || "来打个招呼吧"}
+                            @{u.username} · {u.bio || tr('screen545')}
                           </p>
                         </div>
                         {friendIds.has(u.id) ? (
@@ -328,8 +322,7 @@ export function FriendsPage() {
                             className="btn btn-secondary btn-small"
                             onClick={() => void start(u)}
                           >
-                            发消息
-                          </button>
+                            {tr('screen546')}</button>
                         ) : (
                           <button
                             className="btn btn-primary btn-small"
@@ -340,7 +333,7 @@ export function FriendsPage() {
                                   json("POST", { userId: u.id }),
                                 );
                                 await refresh();
-                              }, "好友申请已发送")
+                              }, tr('screen547'))
                             }
                             disabled={requests.outgoing.some(
                               (r) => (r.to || r.receiver)?.id === u.id,
@@ -350,8 +343,8 @@ export function FriendsPage() {
                             {requests.outgoing.some(
                               (r) => (r.to || r.receiver)?.id === u.id,
                             )
-                              ? "已申请"
-                              : "添加好友"}
+                              ? tr('screen548')
+                              : tr('screen518')}
                           </button>
                         )}
                       </div>
@@ -360,35 +353,32 @@ export function FriendsPage() {
               ) : (
                 <Empty
                   icon={<Search size={28} />}
-                  title="没有找到相关用户"
-                  description="检查拼写，或试试其他用户名。"
+                  title={tr('screen290')}
+                  description={tr('screen549')}
                 />
               )
             ) : (
               <div className="find-note">
                 <ShieldCheck size={18} />
                 <span>
-                  只有接受好友申请后，才能开启私聊。你可以随时删除或屏蔽用户。
-                </span>
+                  {tr('screen550')}</span>
               </div>
             )}
           </>
         )}
         {confirm && (
           <Dialog
-            title={`删除好友 ${confirm.displayName}？`}
+            title={tr('screen551', {v0: confirm.displayName})}
             onClose={() => setConfirm(null)}
           >
             <p className="muted">
-              删除后如需继续私聊，你们需要重新添加好友。已有聊天记录会保留。
-            </p>
+              {tr('screen552')}</p>
             <div className="dialog-actions">
               <button
                 className="btn btn-secondary"
                 onClick={() => setConfirm(null)}
               >
-                取消
-              </button>
+                {tr('cancel')}</button>
               <button
                 className="btn btn-danger"
                 onClick={async () => {
@@ -397,11 +387,10 @@ export function FriendsPage() {
                   await task(async () => {
                     await api(`/friends/${target.id}`, json("DELETE"));
                     await refresh();
-                  }, "已删除好友");
+                  }, tr('screen553'));
                 }}
               >
-                删除好友
-              </button>
+                {tr('screen527')}</button>
             </div>
           </Dialog>
         )}
@@ -410,6 +399,7 @@ export function FriendsPage() {
   );
 }
 export function ProfilePage() {
+  useLanguage();
   const { id } = useParams(),
     { user, reloadUser, refresh, friends, toast } = useApp(),
     [profile, setProfile] = useState<User | null>(null),
@@ -437,31 +427,29 @@ export function ProfilePage() {
   if (loading) return <Spinner />;
   if (!profile)
     return (
-      <Empty title="找不到这位用户">
+      <Empty title={tr('screen554')}>
         <Link to="/friends" className="btn btn-secondary">
-          返回好友
-        </Link>
+          {tr('screen555')}</Link>
       </Empty>
     );
   const person = profile;
   return (
     <div className="page-scroll">
-      <div className="page-content profile-page">
+      <div className="page-content profile-page">{!own && <ReportButton targetType="USER" targetId={profile.id} />}
         <Link to="/friends" className="back-link">
           <ArrowLeft size={16} />
-          返回好友
-        </Link>
+          {tr('screen555')}</Link>
         <PageHeading
-          eyebrow="泊岸 · 你的交流空间"
-          title={own ? "个人资料" : "认识一下"}
+          eyebrow={tr('screen213')}
+          title={own ? tr('screen351') : tr('screen556')}
           description={
-            own ? "让朋友们更容易认出你。" : "每一段连接，从了解彼此开始。"
+            own ? tr('screen557') : tr('screen558')
           }
         />
         <div className="profile-card">
           <div className="profile-cover">
             <div />
-            <span>STAY CONNECTED.</span>
+            <span>{tr('stayConnected')}</span>
           </div>
           <div className="profile-card-content">
             <div className="profile-avatar-row">
@@ -476,7 +464,7 @@ export function ProfilePage() {
                 />
                 {own && editing && (
                   <button
-                    aria-label="上传头像"
+                    aria-label={tr('screen559')}
                     onClick={() => file.current?.click()}
                   >
                     <Camera size={16} />
@@ -491,7 +479,7 @@ export function ProfilePage() {
                     const f = e.target.files?.[0];
                     if (!f) return;
                     if (f.size > 10 * 1024 * 1024) {
-                      toast("头像不能超过 10 MB", true);
+                      toast(tr('screen560'), true);
                       return;
                     }
                     setBusy(true);
@@ -516,7 +504,7 @@ export function ProfilePage() {
                     setEditing(true);
                   }}
                 >
-                  编辑资料 <ArrowUpRight size={15} />
+                  {tr('screen378')}<ArrowUpRight size={15} />
                 </button>
               )}
               {!own && (
@@ -530,7 +518,7 @@ export function ProfilePage() {
                           json("POST", { userId: person.id }),
                         );
                         await refresh();
-                      }, "好友申请已发送");
+                      }, tr('screen547'));
                     } else {
                       const c = await task(() =>
                         api<Conversation>(
@@ -551,8 +539,8 @@ export function ProfilePage() {
                     <UserPlus size={16} />
                   )}{" "}
                   {friends.some((f) => f.id === person.id)
-                    ? "发送消息"
-                    : "添加好友"}
+                    ? tr('screen479')
+                    : tr('screen518')}
                 </button>
               )}
             </div>
@@ -577,14 +565,13 @@ export function ProfilePage() {
                     await reloadUser();
                     await refresh();
                     setEditing(false);
-                    toast("个人资料已更新");
+                    toast(tr('screen561'));
                   }
                   setBusy(false);
                 }}
               >
                 <label>
-                  显示名称
-                  <input
+                  {tr('auth36')}<input
                     name="displayName"
                     defaultValue={person.displayName}
                     required
@@ -593,13 +580,12 @@ export function ProfilePage() {
                   />
                 </label>
                 <label>
-                  个人简介
-                  <textarea
+                  {tr('screen562')}<textarea
                     name="bio"
                     defaultValue={person.bio}
                     maxLength={500}
                     rows={3}
-                    placeholder="分享一点关于你的事…"
+                    placeholder={tr('screen563')}
                   />
                 </label>
                 <div className="dialog-actions">
@@ -608,10 +594,9 @@ export function ProfilePage() {
                     className="btn btn-secondary"
                     onClick={() => setEditing(false)}
                   >
-                    取消
-                  </button>
+                    {tr('cancel')}</button>
                   <button className="btn btn-primary" disabled={busy}>
-                    {busy ? "正在保存…" : "保存修改"}
+                    {busy ? tr('screen564') : tr('screen231')}
                   </button>
                 </div>
               </form>
@@ -628,24 +613,24 @@ export function ProfilePage() {
                 </h1>
                 <p className="profile-username">@{person.username}</p>
                 <div className="profile-detail">
-                  <span className="section-label">个人简介</span>
-                  <p>{person.bio || "这里还没有留下介绍，先打个招呼吧。"}</p>
+                  <span className="section-label">{tr('screen562')}</span>
+                  <p>{person.bio || tr('screen565')}</p>
                 </div>
                 <div className="profile-facts">
                   <div>
-                    <small>用户身份</small>
+                    <small>{tr('screen566')}</small>
                     <span>
-                      {person.role === "ADMIN" ? "站点管理员" : "泊岸用户"}
+                      {person.role === "ADMIN" ? tr('screen567') : tr('screen568')}
                     </span>
                   </div>
                   <div>
-                    <small>连接方式</small>
+                    <small>{tr('screen569')}</small>
                     <span>
                       {own
-                        ? "这是你的个人空间"
+                        ? tr('screen570')
                         : friends.some((f) => f.id === person.id)
-                          ? "你们已是好友"
-                          : "还不是好友"}
+                          ? tr('screen571')
+                          : tr('screen572')}
                     </span>
                   </div>
                 </div>
@@ -655,9 +640,8 @@ export function ProfilePage() {
                       className="text-danger"
                       onClick={() => setBlocking(true)}
                     >
-                      屏蔽此用户
-                    </button>
-                    <span>屏蔽后将无法继续私聊</span>
+                      {tr('screen573')}</button>
+                    <span>{tr('screen574')}</span>
                   </div>
                 )}
               </>
@@ -666,19 +650,17 @@ export function ProfilePage() {
         </div>
         {blocking && (
           <Dialog
-            title={`屏蔽 ${person.displayName}？`}
+            title={tr('screen575', {v0: person.displayName})}
             onClose={() => setBlocking(false)}
           >
             <p className="muted">
-              将解除好友关系并阻止新的好友申请和私聊消息。可以在设置中解除屏蔽。
-            </p>
+              {tr('screen576')}</p>
             <div className="dialog-actions">
               <button
                 className="btn btn-secondary"
                 onClick={() => setBlocking(false)}
               >
-                取消
-              </button>
+                {tr('cancel')}</button>
               <button
                 className="btn btn-danger"
                 onClick={async () => {
@@ -686,11 +668,10 @@ export function ProfilePage() {
                   await task(async () => {
                     await api(`/blocks/${person.id}`, json("POST"));
                     await refresh();
-                  }, "用户已屏蔽");
+                  }, tr('screen577'));
                 }}
               >
-                确认屏蔽
-              </button>
+                {tr('screen578')}</button>
             </div>
           </Dialog>
         )}

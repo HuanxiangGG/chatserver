@@ -1,0 +1,220 @@
+/* Appearance controls use the same surface, focus and accent tokens as chat. */
+.appearance-settings {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.appearance-settings .theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 22px 0 26px;
+}
+.appearance-settings .theme-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--soft);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.appearance-settings .theme-choice:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.appearance-settings .theme-choice.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.appearance-settings .theme-choice:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+.appearance-settings .theme-choice > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  flex-wrap: wrap;
+}
+.appearance-settings .theme-choice > span:last-child > svg {
+  flex-shrink: 0;
+}
+.appearance-settings
+  .theme-choice
+  > span:last-child
+  > svg:last-child:not(:first-child) {
+  margin-left: auto;
+  color: var(--accent);
+}
+.appearance-settings .theme-preview {
+  display: grid;
+  grid-template-columns: 22% minmax(0, 1fr);
+  gap: 8px;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 82px;
+  padding: 10px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #ffffff12;
+  box-shadow: inset 0 1px 0 #ffffff12;
+}
+.appearance-settings .theme-preview > i {
+  display: block;
+  border-radius: 5px;
+  background: #8d8cce22;
+}
+.appearance-settings .theme-preview > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+.appearance-settings .theme-preview > div > i {
+  display: block;
+  width: 82%;
+  height: 10px;
+  border-radius: 4px;
+  background: #8d8cce30;
+}
+.appearance-settings .theme-preview > div > i:nth-child(2) {
+  width: 65%;
+  align-self: flex-end;
+  background: #9794e764;
+}
+.appearance-settings .theme-preview > div > i:nth-child(3) {
+  width: 74%;
+}
+.appearance-settings .preview-dark {
+  background: #101b2f;
+}
+.appearance-settings .preview-light {
+  background: #f6f7fd;
+  border-color: #d9dfed;
+}
+.appearance-settings .preview-system {
+  background: linear-gradient(115deg, #f6f7fd 0 49.5%, #101b2f 50% 100%);
+  border-color: #7f8ba455;
+}
+.appearance-settings .appearance-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 45%);
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 72px;
+}
+.appearance-settings .appearance-field > span {
+  min-width: 0;
+}
+.appearance-settings .appearance-field select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 32px 10px 12px;
+  font: inherit;
+  background: var(--soft);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  cursor: pointer;
+}
+.appearance-settings .setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  margin: 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.appearance-settings .setting-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  margin: 0;
+  cursor: pointer;
+}
+.appearance-settings > p[aria-live] {
+  min-height: 1.6em;
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 14px 0 0;
+}
+.appearance-settings > p.appearance-error {
+  color: var(--danger);
+}
+.appearance-settings > p.appearance-error + .btn {
+  margin-top: 12px;
+}
+.dialog .appearance-settings {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+}
+.dialog .appearance-settings > h2 {
+  display: none;
+}
+@media (max-width: 639px) {
+  .appearance-settings .theme-options {
+    gap: 8px;
+    margin: 18px 0 20px;
+  }
+  .appearance-settings .theme-choice {
+    padding: 8px;
+    gap: 9px;
+    border-radius: 12px;
+  }
+  .appearance-settings .theme-preview {
+    height: 68px;
+    padding: 7px;
+    gap: 5px;
+    border-radius: 7px;
+  }
+  .appearance-settings .theme-choice > span:last-child {
+    font-size: 12px;
+    gap: 5px;
+    min-height: 34px;
+  }
+  .appearance-settings .theme-choice > span:last-child > svg {
+    width: 15px;
+    height: 15px;
+  }
+  .appearance-settings .appearance-field select {
+    font-size: 16px;
+  }
+}
+@media (max-width: 374px) {
+  .appearance-settings .appearance-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 12px 0;
+  }
+  .appearance-settings .theme-preview {
+    height: 58px;
+    padding: 6px;
+  }
+}

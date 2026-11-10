@@ -1,3 +1,4 @@
+import { assertNotGroupMuted } from './group-policy.js';
 import { Router } from 'express';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -11,13 +12,13 @@ const idSchema = z.string().min(1).max(100);
 const attachmentSelect = { id: true, filename: true, mimeType: true, size: true } as const;
 export const messageInclude = {
   sender: { select: publicUserSelect }, attachments: { select: attachmentSelect },
-  replyTo: { select: { id: true, content: true, retractedAt: true, sender: { select: { id: true, displayName: true } } } },
+  replyTo: { select: { id: true, content: true, retractedAt: true, attachments: { select: attachmentSelect }, sender: { select: { id: true, displayName: true } } } },
   reads: { select: { userId: true, deliveredAt: true, readAt: true } },
 } as const;
 type FullMessage = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 export function serializeMessage(message: FullMessage) {
   return { ...message, content: message.retractedAt ? '' : message.content,
-    replyTo: message.replyTo ? { ...message.replyTo, content: message.replyTo.retractedAt ? '' : message.replyTo.content } : null,
+    replyTo: message.replyTo ? { ...message.replyTo, content: message.replyTo.retractedAt ? '' : message.replyTo.content, attachments: message.replyTo.retractedAt ? [] : message.replyTo.attachments } : null,
     attachments: message.retractedAt ? [] : message.attachments.map(a => ({ ...a, originalName: a.filename, url: `/api/uploads/${a.id}` })) };
 }
 export async function membership(conversationId: string, userId: string, db: Prisma.TransactionClient = prisma) {
@@ -39,6 +40,7 @@ export async function lockConversation(db: Prisma.TransactionClient, id: string)
 async function notifyConversation(id: string, users?: string[]) { emitUsers(users ?? await memberIds(id), 'conversation:updated', { id }); }
 async function assertGroupAdmin(id: string, userId: string, ownerOnly = false, db: Prisma.TransactionClient = prisma) {
   const member = await membership(id, userId, db);
+  await assertNotGroupMuted(id, userId, db);
   if (member.conversation.type !== 'GROUP' || (ownerOnly ? member.role !== 'OWNER' : !['OWNER', 'ADMIN'].includes(member.role))) throw new HttpError(403, '需要群管理权限');
   return member;
 }
@@ -49,8 +51,9 @@ async function assertFriends(userId: string, userIds: string[]) {
     if (!friend || friend.friend.banned) throw new HttpError(403, '只能邀请未封禁的好友');
   }
 }
-async function writable(id: string, userId: string, db: Prisma.TransactionClient = prisma) {
+export async function writable(id: string, userId: string, db: Prisma.TransactionClient = prisma) {
   const member = await membership(id, userId, db);
+  await assertNotGroupMuted(id, userId, db);
   await channelPermission(id, userId, true, db);
   if (member.conversation.type === 'DIRECT') {
     const others = (await memberIds(id, db)).filter(u => u !== userId);
@@ -95,8 +98,12 @@ router.get('/conversations/:id', asyncRoute(async (req, res) => {
   const id = validate(idSchema, req.params.id); await membership(id, req.user.id);
   const conversation = await prisma.conversation.findUnique({ where: { id }, include: { channel: true, members: { include: { user: { select: publicUserSelect } } } } });
   const access = await channelPermission(id, req.user.id);
-  const canWrite = !access || ((!access.channel.readOnly || ['OWNER', 'ADMIN', 'MODERATOR'].includes(access.member.role)) && (!access.member.mutedUntil || access.member.mutedUntil <= new Date()));
-  res.json({ ...conversation, canWrite });
+  const channelWritable = !access || ((!access.channel.readOnly || ['OWNER', 'ADMIN', 'MODERATOR'].includes(access.member.role)) && (!access.member.mutedUntil || access.member.mutedUntil <= new Date()));
+  const groupMute = conversation?.type === 'GROUP' ? await prisma.groupMute.findUnique({ where: { conversationId_userId: { conversationId: id, userId: req.user.id } }, include: { member: { select: { role: true } } } }) : null;
+  const muted = !!groupMute && groupMute.member.role !== 'OWNER' && (groupMute.permanent || !!groupMute.until && groupMute.until > new Date());
+  const announcements = conversation?.type === 'GROUP' ? await prisma.groupAnnouncement.findMany({ where: { conversationId: id, deletedAt: null }, select: { version: true, reads: { where: { userId: req.user.id }, select: { version: true } } } }) : [];
+  const unreadAnnouncements = announcements.filter(row => row.reads[0]?.version !== row.version).length;
+  res.json({ ...conversation, unreadAnnouncements, canWrite: channelWritable && !muted, mute: muted ? { permanent: groupMute!.permanent, until: groupMute!.until, reason: groupMute!.reason } : null });
 }));
 router.patch('/conversations/:id', asyncRoute(async (req, res) => {
   const id = validate(idSchema, req.params.id); await assertGroupAdmin(id, req.user.id);

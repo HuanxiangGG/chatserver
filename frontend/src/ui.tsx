@@ -1,3 +1,4 @@
+import { getLanguage, translate as tr, useLanguage } from './i18n';
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import {
@@ -11,6 +12,7 @@ import {
 import type { Conversation, User } from "./types";
 import { useApp } from "./state";
 export function Brand({ compact = false }: { compact?: boolean }) {
+  useLanguage();
   return (
     <span className="brand">
       <span className="brand-mark">
@@ -18,7 +20,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       </span>
       {!compact && (
         <span>
-          泊岸 <small>HARBOR</small>
+          {tr('screen313')}<small>{tr('brandLatin')}</small>
         </span>
       )}
     </span>
@@ -35,7 +37,8 @@ export function Avatar({
   group?: boolean;
   showStatus?: boolean;
 }) {
-  const name = user?.displayName || user?.username || "群";
+  useLanguage();
+  const name = user?.displayName || user?.username || tr('screen314');
   const hash = [...name].reduce((x, v) => x + v.charCodeAt(0), 0) % 6;
   return (
     <span
@@ -53,6 +56,8 @@ export function Avatar({
         <i
           className={`presence-dot ${user?.status?.toLowerCase() || "offline"}`}
           title={statusText(user as User)}
+          role="img"
+          aria-label={statusText(user as User)}
         />
       )}
     </span>
@@ -60,39 +65,40 @@ export function Avatar({
 }
 export function conversationTitle(c: Conversation, me: string) {
   return c.type !== "DIRECT"
-    ? c.name || "未命名群聊"
-    : c.members.find((m) => m.userId !== me)?.user.displayName || "私聊";
+    ? c.name || tr('screen315')
+    : c.members.find((m) => m.userId !== me)?.user.displayName || tr('screen316');
 }
 export function conversationUser(c: Conversation, me: string) {
   return c.type !== "DIRECT"
-    ? { displayName: c.name || "群聊", avatarUrl: c.avatarUrl }
+    ? { displayName: c.name || tr('screen217'), avatarUrl: c.avatarUrl }
     : c.members.find((m) => m.userId !== me)?.user;
 }
 export function statusText(user?: Partial<User> | null) {
   return user?.status === "ONLINE"
-    ? "在线"
+    ? tr('screen317')
     : user?.status === "BUSY"
-      ? "忙碌中"
+      ? tr('screen318')
       : user?.lastSeenAt
-        ? `最后上线 ${formatTime(user.lastSeenAt)}`
-        : "离线";
+        ? tr('screen319', {v0: formatTime(user.lastSeenAt)})
+        : tr('screen320');
 }
 export function formatTime(date: string, full = false) {
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return "";
   const today = new Date().toDateString() === d.toDateString();
   return full
-    ? d.toLocaleString("zh-CN", {
+    ? d.toLocaleString(getLanguage(), {
         month: "short",
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
       })
     : today
-      ? d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-      : d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+      ? d.toLocaleTimeString(getLanguage(), { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString(getLanguage(), { month: "short", day: "numeric" });
 }
-export function Spinner({ label = "正在加载" }: { label?: string }) {
+export function Spinner({ label = tr('screen321') }: { label?: string }) {
+  useLanguage();
   return (
     <div className="loading" role="status">
       <LoaderCircle className="spin" size={23} />
@@ -111,6 +117,7 @@ export function Empty({
   children?: ReactNode;
   icon?: ReactNode;
 }) {
+  useLanguage();
   return (
     <div className="empty">
       <span className="empty-icon">{icon}</span>
@@ -131,6 +138,7 @@ export function PageHeading({
   description?: string;
   action?: ReactNode;
 }) {
+  useLanguage();
   return (
     <header className="page-heading">
       <div>
@@ -146,15 +154,27 @@ export function Dialog({
   title,
   children,
   onClose,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  className?: string;
 }) {
+  useLanguage();
   const dialog = useRef<HTMLElement>(null);
+  const priorFocus = useRef(document.activeElement as HTMLElement | null);
+  const closeHandler = useRef(onClose); closeHandler.current = onClose;
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    return () => previous?.focus();
+    const previous = priorFocus.current;
+    const panel = dialog.current;
+    if (panel && !panel.contains(document.activeElement)) panel.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
+    const escape = (event: globalThis.KeyboardEvent) => {
+      const panels = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (event.key === 'Escape' && panels[panels.length - 1] === panel) { event.preventDefault(); event.stopPropagation(); closeHandler.current(); }
+    };
+    document.addEventListener('keydown', escape, true);
+    return () => { document.removeEventListener('keydown', escape, true); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
   }, []);
   return (
     <div
@@ -165,12 +185,11 @@ export function Dialog({
     >
       <section
         ref={dialog}
-        className="dialog"
+        className={`dialog ${className}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
           if (e.key === "Tab") {
             const items = [
               ...dialog.current!.querySelectorAll<HTMLElement>(
@@ -193,7 +212,7 @@ export function Dialog({
           <h2>{title}</h2>
           <button
             className="icon-btn"
-            aria-label="关闭"
+            aria-label={tr('close')}
             onClick={onClose}
             autoFocus
           >
@@ -212,12 +231,13 @@ export function ErrorBox({
   message: string;
   retry?: () => void;
 }) {
+  useLanguage();
   return (
     <div className="error-box" role="alert">
       <p>{message}</p>
       {retry && (
         <button className="btn btn-secondary" onClick={retry}>
-          重新加载 <ArrowRight size={15} />
+          {tr('screen322')}<ArrowRight size={15} />
         </button>
       )}
     </div>
@@ -234,7 +254,7 @@ export function useTask() {
       if (success) toast(success);
       return result;
     } catch (error) {
-      toast(error instanceof Error ? error.message : "操作失败，请重试", true);
+      toast(error instanceof Error ? error.message : tr('screen323'), true);
       return undefined;
     }
   };

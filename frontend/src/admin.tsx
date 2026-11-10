@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { getLanguage, translate as tr, useLanguage } from './i18n';
+import { AdminReports } from './reports';
+import { useTranslation } from './i18n';
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   Ban,
@@ -31,6 +34,8 @@ type Stats = {
   bannedUsers: number;
 };
 export function AdminPage() {
+  useLanguage();
+  const t = useTranslation();
   const { user, toast } = useApp(),
     [stats, setStats] = useState<Stats | null>(null),
     [users, setUsers] = useState<User[]>([]),
@@ -40,7 +45,13 @@ export function AdminPage() {
     [loading, setLoading] = useState(true),
     [banTarget, setBanTarget] = useState<User | null>(null),
     [busy, setBusy] = useState(false),
+    [moderationId, setModerationId] = useState(''),
+    [moderationReason, setModerationReason] = useState(''),
+    [pendingDeletion, setPendingDeletion] = useState<{ messageId: string; reason: string } | null>(null),
+    [deleting, setDeleting] = useState(false),
+    [deleteError, setDeleteError] = useState(''),
     task = useTask();
+  const deletionLock = useRef(false);
   const load = useCallback(async () => {
     try {
       const [s, u, a] = await Promise.all([
@@ -64,22 +75,21 @@ export function AdminPage() {
     return (
       <Empty
         icon={<ShieldCheck size={30} />}
-        title="仅管理员可访问"
-        description="请使用管理员账号登录后继续。"
+        title={tr('screen262')}
+        description={tr('screen263')}
       />
     );
   return (
     <div className="page-scroll">
       <div className="page-content admin-page">
         <PageHeading
-          eyebrow="泊岸 · 你的交流空间"
-          title="管理后台"
-          description="维护友善的交流空间。每一次管理操作，都有迹可循。"
+          eyebrow={tr('screen213')}
+          title={tr('screen264')}
+          description={tr('screen265')}
           action={
             <button className="btn btn-secondary" onClick={() => void load()}>
               <RefreshCw size={16} />
-              刷新数据
-            </button>
+              {tr('screen266')}</button>
           }
         />
         {loading ? (
@@ -89,22 +99,22 @@ export function AdminPage() {
             <div className="stats-grid">
               {[
                 {
-                  label: "注册用户",
+                  label: tr('screen267'),
                   value: stats?.users,
                   icon: <Users size={21} />,
                 },
                 {
-                  label: "会话总数",
+                  label: tr('screen268'),
                   value: stats?.conversations,
                   icon: <MessageCircle size={21} />,
                 },
                 {
-                  label: "消息总数",
+                  label: tr('screen269'),
                   value: stats?.messages,
                   icon: <FileText size={21} />,
                 },
                 {
-                  label: "活跃登录会话",
+                  label: tr('screen270'),
                   value: stats?.activeSessions,
                   icon: <Activity size={21} />,
                 },
@@ -112,38 +122,35 @@ export function AdminPage() {
                 <div className="stat-card" key={s.label}>
                   <span>{s.icon}</span>
                   <p>{s.label}</p>
-                  <strong>{s.value?.toLocaleString() || "0"}</strong>
+                  <strong>{s.value?.toLocaleString(getLanguage()) || "0"}</strong>
                 </div>
               ))}
             </div>
             <div className="admin-notice">
               <ShieldCheck size={18} />
               <p>
-                当前以 <strong>{user.displayName}</strong>{" "}
-                的管理员身份操作。封禁与内容删除会记录操作人、目标、原因和时间。
-              </p>
-              <span>{stats?.bannedUsers || 0} 个封禁账号</span>
+                {tr('screen271')}<strong>{user.displayName}</strong>{" "}
+                {tr('screen272')}</p>
+              <span>{stats?.bannedUsers || 0} {tr('screen273')}</span>
             </div>
-            <div className="page-tabs">
+            <div className="page-tabs"><button className={tab === "reports" ? "active" : ""} onClick={() => setTab("reports")}>{t("reportsTitle")}</button>
               <button
                 className={tab === "users" ? "active" : ""}
                 onClick={() => setTab("users")}
               >
-                用户管理
-              </button>
+                {tr('screen274')}</button>
               <button
                 className={tab === "moderation" ? "active" : ""}
                 onClick={() => setTab("moderation")}
               >
-                消息管理
-              </button>
+                {tr('screen275')}</button>
               <button
                 className={tab === "actions" ? "active" : ""}
                 onClick={() => setTab("actions")}
               >
-                操作日志
-              </button>
+                {tr('screen276')}</button>
             </div>
+            {tab === "reports" && <AdminReports />}
             {tab === "users" && (
               <>
                 <form
@@ -159,22 +166,22 @@ export function AdminPage() {
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       maxLength={64}
-                      placeholder="搜索用户名或昵称"
-                      aria-label="搜索用户"
+                      placeholder={tr('screen277')}
+                      aria-label={tr('screen278')}
                     />
                   </div>
-                  <button className="btn btn-secondary btn-small">搜索</button>
-                  <span className="muted">显示 {users.length} 位用户</span>
+                  <button className="btn btn-secondary btn-small">{tr('searchButton')}</button>
+                  <span className="muted">{tr('screen279')}{users.length} {tr('screen280')}</span>
                 </form>
                 <div className="table-scroll">
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>用户</th>
-                        <th>身份</th>
-                        <th>注册时间</th>
-                        <th>状态</th>
-                        <th>操作</th>
+                        <th>{tr('screen281')}</th>
+                        <th>{tr('screen282')}</th>
+                        <th>{tr('screen283')}</th>
+                        <th>{tr('screen284')}</th>
+                        <th>{tr('screen285')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -189,7 +196,7 @@ export function AdminPage() {
                               </div>
                             </div>
                           </td>
-                          <td>{u.role === "ADMIN" ? "管理员" : "用户"}</td>
+                          <td>{u.role === "ADMIN" ? tr('screen236') : tr('screen281')}</td>
                           <td>
                             {u.createdAt ? formatTime(u.createdAt, true) : "—"}
                           </td>
@@ -197,7 +204,7 @@ export function AdminPage() {
                             <span
                               className={`table-status ${u.banned ? "banned" : ""}`}
                             >
-                              {u.banned ? "已封禁" : "正常"}
+                              {u.banned ? tr('screen286') : tr('screen287')}
                             </span>
                           </td>
                           <td>
@@ -211,7 +218,7 @@ export function AdminPage() {
                               ) : (
                                 <Ban size={14} />
                               )}{" "}
-                              {u.banned ? "解除封禁" : "封禁"}
+                              {u.banned ? tr('screen288') : tr('screen289')}
                             </button>
                           </td>
                         </tr>
@@ -220,8 +227,8 @@ export function AdminPage() {
                   </table>
                   {users.length === 0 && (
                     <Empty
-                      title="没有找到相关用户"
-                      description="试试其他用户名。"
+                      title={tr('screen290')}
+                      description={tr('screen291')}
                     />
                   )}
                 </div>
@@ -229,59 +236,45 @@ export function AdminPage() {
             )}
             {tab === "moderation" && (
               <section className="settings-section moderation-section">
-                <h2>删除违规消息</h2>
+                <h2>{tr('screen292')}</h2>
                 <p>
-                  填写消息 ID
-                  与处理原因。删除后所有会话成员都无法再查看消息内容。
-                </p>
+                  {tr('screen293')}</p>
                 <form
                   className="form-stack"
-                  onSubmit={async (e) => {
+                  onSubmit={(e) => {
                     e.preventDefault();
-                    if (
-                      !window.confirm(
-                        "确认删除这条消息？操作将记录到管理员日志。",
-                      )
-                    )
-                      return;
-                    const form = e.currentTarget,
-                      values = new FormData(form);
-                    setBusy(true);
-                    const result = await task(async () => {
-                      await api(
-                        `/admin/messages/${encodeURIComponent(String(values.get("messageId")))}`,
-                        json("DELETE", { reason: values.get("reason") }),
-                      );
-                      await load();
-                      return true;
-                    }, "消息已删除，操作日志已记录");
-                    if (result) form.reset();
-                    setBusy(false);
+                    if (deletionLock.current) return;
+                    setDeleteError('');
+                    setPendingDeletion({ messageId: moderationId.trim(), reason: moderationReason.trim() });
                   }}
                 >
                   <label>
-                    消息 ID
-                    <input
+                    {tr('screen296')}<input
                       name="messageId"
+                      value={moderationId}
+                      onChange={e => setModerationId(e.target.value)}
+                      disabled={!!pendingDeletion}
                       required
                       maxLength={100}
-                      placeholder="粘贴需要处理的消息 ID"
+                      placeholder={tr('screen297')}
                     />
                   </label>
                   <label>
-                    处理原因
-                    <textarea
+                    {tr('screen298')}<textarea
                       name="reason"
+                      value={moderationReason}
+                      onChange={e => setModerationReason(e.target.value)}
+                      disabled={!!pendingDeletion}
                       required
                       minLength={3}
                       maxLength={500}
                       rows={3}
-                      placeholder="记录核实情况和处理原因，至少 3 个字符"
+                      placeholder={tr('screen299')}
                     />
                   </label>
-                  <button className="btn btn-danger" disabled={busy}>
+                  <button className="btn btn-danger" disabled={!!pendingDeletion}>
                     <Trash2 size={16} />
-                    {busy ? "正在处理…" : "删除消息并记录日志"}
+                    {tr('screen300')}
                   </button>
                 </form>
               </section>
@@ -300,30 +293,51 @@ export function AdminPage() {
                           <span>{formatTime(a.createdAt, true)}</span>
                         </h3>
                         <p>
-                          操作人：
-                          {a.actor?.displayName ||
+                          {tr('screen301')}{a.actor?.displayName ||
                             a.admin?.displayName ||
-                            "管理员"}{" "}
-                          · 目标：<code>{a.targetId || "—"}</code>
+                            tr('screen236')}{" "}
+                          {tr('screen302')}<code>{a.targetId || "—"}</code>
                         </p>
-                        <blockquote>{a.reason || "未填写原因"}</blockquote>
+                        <blockquote>{a.reason || tr('screen303')}</blockquote>
                       </div>
                     </article>
                   ))
                 ) : (
                   <Empty
                     icon={<ShieldCheck size={29} />}
-                    title="暂时没有管理操作"
-                    description="封禁和删除消息等操作会出现在这里。"
+                    title={tr('screen304')}
+                    description={tr('screen305')}
                   />
                 )}
               </div>
             )}
           </>
         )}
+        {pendingDeletion && <Dialog title={tr('confirmDelete')} onClose={() => { if (!deletionLock.current) setPendingDeletion(null); }}>
+          <div aria-busy={deleting}>
+            <p>{tr('screen294')}</p>
+            <dl><dt>{tr('screen296')}</dt><dd><code>{pendingDeletion.messageId}</code></dd><dt>{tr('screen298')}</dt><dd>{pendingDeletion.reason}</dd></dl>
+            {deleteError && <p className="error-box" role="alert">{deleteError}</p>}
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-secondary" disabled={deleting} onClick={() => setPendingDeletion(null)}>{tr('cancel')}</button>
+              <button type="button" className="btn btn-danger" disabled={deleting} onClick={async () => {
+                if (deletionLock.current) return;
+                deletionLock.current = true; setDeleting(true); setDeleteError('');
+                const submitted = pendingDeletion;
+                try {
+                  await api(`/admin/messages/${encodeURIComponent(submitted.messageId)}`, json('DELETE', { reason: submitted.reason }));
+                  setModerationId(current => current.trim() === submitted.messageId ? '' : current);
+                  setModerationReason(current => current.trim() === submitted.reason ? '' : current);
+                  setPendingDeletion(null); toast(tr('screen295')); await load();
+                } catch (error) { setDeleteError(error instanceof Error ? error.message : tr('screen323')); }
+                finally { deletionLock.current = false; setDeleting(false); }
+              }}>{deleting ? tr('auth58') : tr('confirmDelete')}</button>
+            </div>
+          </div>
+        </Dialog>}
         {banTarget && (
           <Dialog
-            title={`${banTarget.banned ? "解除封禁" : "封禁"} ${banTarget.displayName}？`}
+            title={`${banTarget.banned ? tr('screen288') : tr('screen289')} ${banTarget.displayName}？`}
             onClose={() => setBanTarget(null)}
           >
             <form
@@ -338,6 +352,7 @@ export function AdminPage() {
                       `/admin/users/${banTarget.id}/ban`,
                       json("POST", {
                         banned: !banTarget.banned,
+                        until: !banTarget.banned && Number(f.get("duration")) > 0 ? new Date(Date.now() + Number(f.get("duration"))).toISOString() : null,
                         reason: f.get("reason"),
                       }),
                     );
@@ -345,34 +360,34 @@ export function AdminPage() {
                     return true;
                   },
                   banTarget.banned
-                    ? "已解除封禁"
-                    : "用户已封禁并退出所有登录会话",
+                    ? tr('screen306')
+                    : tr('screen307'),
                 );
                 if (result) setBanTarget(null);
                 setBusy(false);
               }}
             >
+              {!banTarget.banned && <label>{t("banDuration")}<select name="duration"><option value="0">{t("banPermanent")}</option><option value="3600000">{t("banHour")}</option><option value="86400000">{t("banDay")}</option><option value="604800000">{t("banWeek")}</option></select></label>}
               <p className="muted">
                 {banTarget.banned
-                  ? "解除后用户可以重新登录。"
-                  : "封禁后用户会退出所有设备，并无法继续登录。"}
+                  ? tr('screen308')
+                  : tr('screen309')}
               </p>
               <label>
-                操作原因
-                <textarea
+                {tr('screen310')}<textarea
                   name="reason"
                   required
                   minLength={3}
                   maxLength={500}
                   rows={3}
-                  placeholder="至少 3 个字符，将写入操作日志"
+                  placeholder={tr('screen311')}
                 />
               </label>
               <button
                 className={`btn ${banTarget.banned ? "btn-primary" : "btn-danger"}`}
                 disabled={busy}
               >
-                {busy ? "正在处理…" : "确认并记录日志"}
+                {busy ? tr('auth58') : tr('screen312')}
               </button>
             </form>
           </Dialog>

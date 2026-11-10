@@ -36,9 +36,20 @@ jobs:
       - run: npm ci
       - run: npm run db:generate
       - run: npm run db:migrate
+      - run: npm run i18n:check
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Browser viewport and real message acceptance
+        run: npm run test:browser:ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-viewport-regressions
+          path: test-results/browser/
+          retention-days: 7
+          if-no-files-found: ignore
       - run: docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.caddy.yml config --quiet
       - run: docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.caddy.yml build
       - run: docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.caddy.yml up -d --wait --wait-timeout 180
@@ -51,6 +62,7 @@ jobs:
       - run: node scripts/smoke.mjs
         env:
           SMOKE_ORIGIN: https://chat.6hx9.com
+      - run: ./scripts/verify-backup-ci.sh
       - if: failure()
         run: |
           if [ -f .env.example ]; then docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.caddy.yml logs --no-color --tail=100; fi

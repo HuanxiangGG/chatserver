@@ -1,3 +1,6 @@
+import { Prisma } from '@prisma/client';
+import { requestRecovery } from './recovery-mail.js';
+import { expireBan } from './ban-policy.js';
 import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
@@ -25,7 +28,8 @@ router.post('/auth/login', asyncRoute(async (req, res) => {
   await consumeLimit(`login:ip:${req.ip}`, 30, 900);
   const input = validate(z.object({ username: z.string().trim().toLowerCase().min(3).max(254), password: z.string().min(1).max(256) }), req.body);
   await consumeLimit(`login:account:${hashToken(input.username)}`, 10, 900);
-  const user = await prisma.user.findFirst({ where: { OR: [{ username: input.username }, { email: input.username }] } });
+  let user = await prisma.user.findFirst({ where: { OR: [{ username: input.username }, { email: input.username }] } });
+  if (user?.banned && user.bannedUntil && user.bannedUntil <= new Date()) { await expireBan(user.id); user = await prisma.user.findUnique({ where: { id: user.id } }); }
   const correct = await compare(input.password, user?.passwordHash ?? await dummyHash);
   if (!user || !correct || user.banned) throw new HttpError(401, '用户名或密码错误，或账户不可用');
   const { token, session } = await prisma.$transaction(async tx => {
@@ -40,6 +44,24 @@ router.post('/auth/login', asyncRoute(async (req, res) => {
   res.cookie(config.cookieName, token, { ...cookieOptions, expires: session.expiresAt }).json({ user: publicUser(user), csrfToken: session.csrfToken });
 }));
 router.get('/auth/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user), csrfToken: req.session.csrfToken }));
+const soundSchema = z.strictObject({ enabled: z.boolean(), direct: z.boolean(), group: z.boolean(), mention: z.boolean(), volume: z.number().min(0).max(1), tone: z.enum(['soft', 'bell']), dnd: z.boolean(), scheduled: z.boolean(), start: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/), end: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/) });
+router.get('/users/me/sound', requireAuth, asyncRoute(async (req, res) => {
+  const row = await prisma.userPreference.findUnique({ where: { userId: req.user.id } }); res.json({ sound: row?.sound ?? null });
+}));
+router.put('/users/me/sound', requireAuth, asyncRoute(async (req, res) => {
+  const sound = validate(soundSchema, req.body);
+  await prisma.userPreference.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, sound }, update: { sound } }); res.json({ sound });
+}));
+const appearanceSchema = z.strictObject({ mode: z.enum(['dark', 'light', 'system']), accent: z.enum(['indigo', 'violet', 'teal']), density: z.enum(['comfortable', 'compact']), fontSize: z.union([z.literal(14), z.literal(16), z.literal(18)]), animations: z.boolean() });
+router.get('/users/me/appearance', requireAuth, asyncRoute(async (req, res) => {
+  const row = await prisma.userPreference.findUnique({ where: { userId: req.user.id }, select: { appearance: true } }); res.json({ appearance: row?.appearance ?? null });
+}));
+router.put('/users/me/appearance', requireAuth, asyncRoute(async (req, res) => {
+  const appearance = validate(appearanceSchema, req.body);
+  // JSON null preserves the sound endpoint's unset state so guest audio settings
+  // can still import when appearance is the first preference saved on an account.
+  await prisma.userPreference.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, sound: Prisma.JsonNull, appearance }, update: { appearance } }); res.json({ appearance });
+}));
 router.post('/auth/logout', requireAuth, asyncRoute(async (req, res) => {
   await prisma.session.update({ where: { id: req.session.id }, data: { revokedAt: new Date() } });
   await disconnectSession(req.session.id);
@@ -76,11 +98,9 @@ router.post('/auth/password', requireAuth, asyncRoute(async (req, res) => {
 }));
 router.post('/auth/forgot-password', asyncRoute(async (req, res) => {
   await consumeLimit(`recovery:ip:${req.ip}`, 5, 3600);
-  validate(z.object({ email: emailSchema }), req.body);
-  // A mail adapter is intentionally not configured. Recovery requires the trusted
-  // recovery CLI after the operator verifies the user's identity out of band.
-  // Never reveal account existence or return a reset token from this public route.
-  res.status(202).json({ ok: true, message: '如需恢复账户，请联系管理员完成身份验证。' });
+  const input = validate(z.object({ email: emailSchema, language: z.enum(['zh-CN', 'en']).default('zh-CN') }), req.body);
+  const result = await requestRecovery(input.email, input.language);
+  res.status(202).json({ ok: true, recovery: result, message: result === 'unconfigured' ? '此站点未启用邮件找回，请联系管理员核验身份。' : '请求已受理。如果邮箱符合条件，将收到短时有效的链接；若未收到，请联系管理员。' });
 }));
 router.post('/auth/reset-password', asyncRoute(async (req, res) => {
   await consumeLimit(`reset:ip:${req.ip}`, 10, 3600);

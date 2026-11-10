@@ -1,3 +1,6 @@
+import { translate as tr, useLanguage } from './i18n';
+import { ReportButton } from './reports';
+import { GroupModerationPanel } from './group-moderation';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -24,6 +27,7 @@ import {
   useTask,
 } from "./ui";
 export function GroupPage() {
+  useLanguage();
   const { id } = useParams(),
     { user, friends, refresh, toast } = useApp(),
     [group, setGroup] = useState<Conversation | null>(null),
@@ -57,12 +61,11 @@ export function GroupPage() {
     return (
       <Empty
         icon={<Users size={29} />}
-        title="无法打开群聊管理"
-        description="群聊可能已解散，或你已不是群成员。"
+        title={tr('screen207')}
+        description={tr('screen208')}
       >
         <Link to="/chat" className="btn btn-secondary">
-          返回消息
-        </Link>
+          {tr('screen209')}</Link>
       </Empty>
     );
   const g = group,
@@ -79,8 +82,8 @@ export function GroupPage() {
   }
   function remove(m: Member) {
     setConfirm({
-      title: `移出 ${m.user.displayName}？`,
-      body: "移出后，这位成员将无法继续读取或发送群消息。",
+      title: tr('screen210', {v0: m.user.displayName}),
+      body: tr('screen211'),
       run: () => mutate(`/conversations/${id}/members/${m.userId}`, "DELETE"),
     });
   }
@@ -89,12 +92,11 @@ export function GroupPage() {
       <div className="page-content group-page">
         <Link className="back-link" to={`/chat/${id}`}>
           <ArrowLeft size={16} />
-          返回聊天
-        </Link>
+          {tr('screen212')}</Link>
         <PageHeading
-          eyebrow="泊岸 · 你的交流空间"
-          title="群聊管理"
-          description="给共同的空间，一点用心的照料。"
+          eyebrow={tr('screen213')}
+          title={tr('screen214')}
+          description={tr('screen215')}
           action={
             manager && (
               <button
@@ -102,22 +104,22 @@ export function GroupPage() {
                 onClick={() => setInviting(true)}
               >
                 <UserPlus size={17} />
-                邀请成员
-              </button>
+                {tr('screen216')}</button>
             )
           }
         />
+        <ReportButton targetType="GROUP" targetId={g.id} /><GroupModerationPanel conversation={g} />
         <div className="group-summary">
           <div className="group-avatar-edit">
             <Avatar
-              user={{ displayName: g.name || "群聊", avatarUrl: g.avatarUrl }}
+              user={{ displayName: g.name || tr('screen217'), avatarUrl: g.avatarUrl }}
               group
               size="xl"
             />
             {manager && (
               <>
                 <button
-                  aria-label="上传群头像"
+                  aria-label={tr('screen218')}
                   onClick={() => avatarInput.current?.click()}
                   disabled={busy}
                 >
@@ -132,21 +134,21 @@ export function GroupPage() {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     if (file.size > 10 * 1024 * 1024) {
-                      toast("群头像不能超过10MB", true);
+                      toast(tr('screen219'), true);
                       return;
                     }
                     setBusy(true);
                     await task(async () => {
                       const data = new FormData();
                       data.append("file", file);
-                      const uploaded = await api<Attachment>("/uploads", {
+                      const uploaded = await api<Attachment>(`/uploads?conversationId=${encodeURIComponent(g.id)}`, {
                         method: "POST",
                         body: data,
                       });
                       await mutate(`/conversations/${id}`, "PATCH", {
                         avatarUrl: `/api/uploads/${uploaded.id}`,
                       });
-                    }, "群头像已更新");
+                    }, tr('screen220'));
                     setBusy(false);
                   }}
                 />
@@ -155,19 +157,18 @@ export function GroupPage() {
           </div>
           <div>
             <h2>{g.name}</h2>
-            <p>{g.description || "还没有群简介"}</p>
+            <p>{g.description || tr('screen221')}</p>
             <span className="pending-pill">
               <Users size={13} />
-              {g.members.length} 位成员
-            </span>
+              {g.members.length} {tr('screen222')}</span>
           </div>
           <span className="role-badge">
-            {owner ? "你是群主" : manager ? "你是管理员" : "你是群成员"}
+            {owner ? tr('screen223') : manager ? tr('screen224') : tr('screen225')}
           </span>
         </div>
         {manager && (
           <section className="settings-section">
-            <h2>基本信息</h2>
+            <h2>{tr('screen226')}</h2>
             <form
               className="form-stack group-edit-form"
               onSubmit={async (e) => {
@@ -180,14 +181,13 @@ export function GroupPage() {
                       name: f.get("name"),
                       description: f.get("description"),
                     }),
-                  "群资料已更新",
+                  tr('screen227'),
                 );
                 setBusy(false);
               }}
             >
               <label>
-                群名称
-                <input
+                {tr('screen228')}<input
                   name="name"
                   defaultValue={g.name || ""}
                   required
@@ -195,8 +195,7 @@ export function GroupPage() {
                 />
               </label>
               <label>
-                群简介
-                <textarea
+                {tr('screen229')}<textarea
                   name="description"
                   defaultValue={g.description || ""}
                   rows={2}
@@ -204,7 +203,7 @@ export function GroupPage() {
                 />
               </label>
               <button className="btn btn-primary" disabled={busy}>
-                {busy ? "保存中…" : "保存修改"}
+                {busy ? tr('screen230') : tr('screen231')}
               </button>
             </form>
           </section>
@@ -213,9 +212,9 @@ export function GroupPage() {
           <div className="section-toolbar">
             <div>
               <h2>
-                群成员 <span className="count-pill">{g.members.length}</span>
+                {tr('screen232')}<span className="count-pill">{g.members.length}</span>
               </h2>
-              <p>群主、管理员与成员，各司其职。</p>
+              <p>{tr('screen233')}</p>
             </div>
           </div>
           <div className="member-table">
@@ -228,7 +227,7 @@ export function GroupPage() {
                   <Link to={`/profile/${m.userId}`}>
                     <strong>
                       {m.user.displayName}
-                      {m.userId === user!.id && <small>（你）</small>}
+                      {m.userId === user!.id && <small>{tr('screen234')}</small>}
                     </strong>
                   </Link>
                   <span>{statusText(m.user)}</span>
@@ -237,22 +236,20 @@ export function GroupPage() {
                   {m.role === "OWNER" ? (
                     <>
                       <Crown size={13} />
-                      群主
-                    </>
+                      {tr('screen235')}</>
                   ) : m.role === "ADMIN" ? (
                     <>
                       <Shield size={13} />
-                      管理员
-                    </>
+                      {tr('screen236')}</>
                   ) : (
-                    "成员"
+                    tr('screen237')
                   )}
                 </span>
                 {owner && m.userId !== user!.id && (
                   <div className="member-actions">
                     <select
                       value={m.role}
-                      aria-label={`设置 ${m.user.displayName} 的权限`}
+                      aria-label={tr('screen238', {v0: m.user.displayName})}
                       onChange={(e) =>
                         void task(
                           () =>
@@ -261,19 +258,19 @@ export function GroupPage() {
                               "PATCH",
                               { role: e.target.value },
                             ),
-                          "成员权限已更新",
+                          tr('screen239'),
                         )
                       }
                     >
-                      <option value="MEMBER">普通成员</option>
-                      <option value="ADMIN">管理员</option>
+                      <option value="MEMBER">{tr('screen240')}</option>
+                      <option value="ADMIN">{tr('screen236')}</option>
                     </select>
                     <button
                       className="text-link"
                       onClick={() =>
                         setConfirm({
-                          title: `转让群主给 ${m.user.displayName}？`,
-                          body: "转让后，你将成为管理员，失去群主专属权限。此操作需新群主主动转回才能恢复。",
+                          title: tr('screen241', {v0: m.user.displayName}),
+                          body: tr('screen242'),
                           run: () =>
                             mutate(`/conversations/${id}/transfer`, "POST", {
                               userId: m.userId,
@@ -281,8 +278,7 @@ export function GroupPage() {
                         })
                       }
                     >
-                      转让群主
-                    </button>
+                      {tr('screen243')}</button>
                   </div>
                 )}
                 {manager &&
@@ -292,8 +288,8 @@ export function GroupPage() {
                     <button
                       className="icon-btn danger-subtle"
                       onClick={() => remove(m)}
-                      aria-label={`移出 ${m.user.displayName}`}
-                      title="移出成员"
+                      aria-label={tr('screen244', {v0: m.user.displayName})}
+                      title={tr('screen245')}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -304,21 +300,21 @@ export function GroupPage() {
         </section>
         <section className="group-danger">
           <div>
-            <h3>{owner ? "解散群聊" : "退出群聊"}</h3>
+            <h3>{owner ? tr('screen246') : tr('screen247')}</h3>
             <p>
               {owner
-                ? "解散后，所有成员将无法再访问这个群聊。"
-                : "退出后将无法访问群消息，需要再次被邀请才能加入。"}
+                ? tr('screen248')
+                : tr('screen249')}
             </p>
           </div>
           <button
             className="btn btn-danger-outline"
             onClick={() =>
               setConfirm({
-                title: owner ? "确定解散这个群聊？" : "确定退出这个群聊？",
+                title: owner ? tr('screen250') : tr('screen251'),
                 body: owner
-                  ? "这个操作无法撤销，所有成员将失去此群聊的访问权限。"
-                  : "你可以由群管理员再次邀请加入。",
+                  ? tr('screen252')
+                  : tr('screen253'),
                 run: async () => {
                   await api(
                     owner
@@ -333,15 +329,14 @@ export function GroupPage() {
             }
           >
             {owner ? <Trash2 size={16} /> : <LogOut size={16} />}{" "}
-            {owner ? "解散群聊" : "退出群聊"}
+            {owner ? tr('screen246') : tr('screen247')}
           </button>
         </section>
         {inviting && (
-          <Dialog title="邀请好友加入群聊" onClose={() => setInviting(false)}>
+          <Dialog title={tr('screen254')} onClose={() => setInviting(false)}>
             <div className="form-stack">
               <p className="muted">
-                选择要邀请的好友。只有你的好友可以被邀请。
-              </p>
+                {tr('screen255')}</p>
               <div className="pick-list">
                 {available.length ? (
                   available.map((f) => (
@@ -368,7 +363,7 @@ export function GroupPage() {
                     </button>
                   ))
                 ) : (
-                  <p className="muted">没有可邀请的好友了。</p>
+                  <p className="muted">{tr('screen256')}</p>
                 )}
               </div>
               <button
@@ -382,12 +377,11 @@ export function GroupPage() {
                     });
                     setInviting(false);
                     setSelected([]);
-                  }, "已邀请好友加入");
+                  }, tr('screen257'));
                   setBusy(false);
                 }}
               >
-                邀请 {selected.length || ""} 位好友
-              </button>
+                {tr('screen258')}{selected.length || ""} {tr('screen259')}</button>
             </div>
           </Dialog>
         )}
@@ -399,18 +393,16 @@ export function GroupPage() {
                 className="btn btn-secondary"
                 onClick={() => setConfirm(null)}
               >
-                取消
-              </button>
+                {tr('cancel')}</button>
               <button
                 className="btn btn-danger"
                 onClick={async () => {
                   const run = confirm.run;
                   setConfirm(null);
-                  await task(run, "操作已完成");
+                  await task(run, tr('screen260'));
                 }}
               >
-                确认
-              </button>
+                {tr('screen261')}</button>
             </div>
           </Dialog>
         )}

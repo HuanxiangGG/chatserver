@@ -1,3 +1,5 @@
+import { AppearanceSettings } from './appearance';
+import { getLanguage, setLanguage, useTranslation, type TranslationKey } from './i18n';
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
@@ -9,21 +11,25 @@ import {
   MessageCircle,
   ShieldCheck,
   Sparkles,
+  Palette,
 } from "lucide-react";
 import { api, json } from "./api";
 import { useApp } from "./state";
-import { Brand, Spinner } from "./ui";
+import { Brand, Dialog, Spinner } from "./ui";
 import type { User } from "./types";
 export function AuthPage({
   mode,
 }: {
   mode: "login" | "register" | "forgot" | "reset";
 }) {
+  const t = useTranslation();
+  const [recoveryMail, setRecoveryMail] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const { user, loading, login, toast } = useApp(),
     navigate = useNavigate(),
     location = useLocation();
   const [recoveryToken] = useState(
-    () => new URLSearchParams(window.location.search).get("token") || "",
+    () => new URLSearchParams(window.location.hash.slice(1)).get("token") || new URLSearchParams(window.location.search).get("token") || "",
   );
   useEffect(() => {
     if (recoveryToken)
@@ -31,14 +37,14 @@ export function AuthPage({
   }, [recoveryToken]);
   const submitting = useRef(false);
   const [password, setPassword] = useState('');
-  const [fields, setFields] = useState<Record<string, string>>({});
+  const [fields, setFields] = useState<Record<string, TranslationKey | ''>>({});
   const strength = [password.length >= 10, /[a-z]/.test(password) && /[A-Z]/.test(password), /[0-9]/.test(password), /[^a-zA-Z0-9]/.test(password)].filter(Boolean).length;
-  function fieldError(name: string, value: string, form: HTMLFormElement) {
-    if (name === 'username' && mode === 'register' && !/^[A-Za-z0-9_]{3,24}$/.test(value)) return '用户名需为 3–24 位字母、数字或下划线';
-    if (name === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return '请输入有效的邮箱地址';
-    if ((name === 'password' || name === 'newPassword') && mode !== 'login' && (value.length < 10 || new TextEncoder().encode(value).length > 72)) return '密码至少 10 个字符，且不超过 72 个 UTF-8 字节';
-    if (name === 'confirmPassword' && value !== String(new FormData(form).get(mode === 'reset' ? 'newPassword' : 'password'))) return '两次输入的密码不一致';
-    if (!value.trim()) return '此项不能为空';
+  function fieldError(name: string, value: string, form: HTMLFormElement): TranslationKey | '' {
+    if (name === 'username' && mode === 'register' && !/^[A-Za-z0-9_]{3,24}$/.test(value)) return 'auth1';
+    if (name === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'auth2';
+    if ((name === 'password' || name === 'newPassword') && mode !== 'login' && (value.length < 10 || new TextEncoder().encode(value).length > 72)) return 'auth3';
+    if (name === 'confirmPassword' && value !== String(new FormData(form).get(mode === 'reset' ? 'newPassword' : 'password'))) return 'auth4';
+    if (!value.trim()) return 'auth5';
     return '';
   }
   const [busy, setBusy] = useState(false),
@@ -49,21 +55,21 @@ export function AuthPage({
     return (
       <div className="app-bootstrap">
         <Brand />
-        <Spinner label="正在检查登录会话…" />
+        <Spinner label={t('auth6')} />
       </div>
     );
   if (user) return <Navigate to="/chat" replace />;
   const titles = {
-    login: "很高兴，再次见到你。",
-    register: "给每一次相遇，一个开始。",
-    forgot: "找回你的账号",
-    reset: "设置新的密码",
+    login: t('auth7'),
+    register: t('auth8'),
+    forgot: t('auth9'),
+    reset: t('auth10'),
   };
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (submitting.current) return;
     setError("");
-    const issues: Record<string, string> = {};
+    const issues: Record<string, TranslationKey> = {};
     for (const [name, value] of new FormData(e.currentTarget)) {
       const issue = fieldError(name, String(value), e.currentTarget);
       if (issue) issues[name] = issue;
@@ -77,11 +83,12 @@ export function AuthPage({
     delete data.confirmPassword;
     try {
       if (mode === "forgot") {
-        await api("/auth/forgot-password", json("POST", data));
+        const result = await api<{recovery: string}>("/auth/forgot-password", json("POST", { ...data, language: getLanguage() }));
+        setRecoveryMail(result.recovery === "accepted");
         setSent(true);
       } else if (mode === "reset") {
         await api("/auth/reset-password", json("POST", data));
-        toast("密码已重设，请使用新密码登录");
+        toast(t('auth11'));
         navigate("/login");
       } else {
         const session = await api<{ user: User; csrfToken: string }>(
@@ -97,7 +104,7 @@ export function AuthPage({
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "操作失败");
+      setError(err instanceof Error ? err.message : t('auth12'));
     } finally {
       setBusy(false);
       submitting.current = false;
@@ -109,18 +116,14 @@ export function AuthPage({
         <Brand />
         <div className="story-content">
           <span className="story-kicker">
-            <span /> 与重要的人，自在交流
-          </span>
+            <span /> {t('auth13')}</span>
           <h1>
-            让交流，
-            <br />
-            自在发生<span>。</span>
+            {t('auth14')}<br />
+            {t('auth15')}
           </h1>
           <p>
-            一条消息，拉近彼此的距离。
-            <br />
-            在泊岸，留一处空间给重要的人。
-          </p>
+            {t('auth16')}<br />
+            {t('auth17')}</p>
           <div className="story-art" aria-hidden="true">
             <div className="art-orbit orbit-1" />
             <div className="art-orbit orbit-2" />
@@ -128,21 +131,18 @@ export function AuthPage({
               <MessageCircle size={53} strokeWidth={1.3} />
             </div>
             <span className="art-chip chip-1">
-              <Sparkles size={18} /> 让想法相遇
-            </span>
+              <Sparkles size={18} /> {t('auth18')}</span>
             <span className="art-chip chip-2">
-              <span className="mini-dot" /> 即时连接
-            </span>
+              <span className="mini-dot" /> {t('auth19')}</span>
             <span className="art-chip chip-3">
-              <Check size={17} /> 消息已送达
-            </span>
+              <Check size={17} /> {t('auth20')}</span>
           </div>
         </div>
         <footer>
           <ShieldCheck size={16} />
-          <span>安全连接 · 私密空间 · 多端同步</span>
+          <span>{t('auth21')}</span>
           <span className="story-year">
-            © {new Date().getFullYear()} Harbor
+            © {new Date().getFullYear()} {t('authCopyright')}
           </span>
         </footer>
       </section>
@@ -150,30 +150,29 @@ export function AuthPage({
         <div className="auth-mobile-brand">
           <Brand />
         </div>
-        <div className="auth-form-wrap">
+        <div className="auth-form-wrap"><label className="auth-language">{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t('chinese')}</option><option value="en">{t('english')}</option></select></label><button type="button" className="btn btn-secondary auth-appearance" onClick={() => setAppearanceOpen(true)}><Palette size={16}/>{t('appearanceTitle')}</button>
           <span className="eyebrow">
-            {mode === "register" ? "欢迎加入泊岸" : "欢迎回到泊岸"}
+            {mode === "register" ? t('auth22') : t('auth23')}
           </span>
           <h2>{titles[mode]}</h2>
           <p>
             {mode === "login"
-              ? "登录泊岸，接着聊聊。"
+              ? t('auth24')
               : mode === "register"
-                ? "创建你的泊岸账号，与朋友保持连接。"
+                ? t('auth25')
                 : mode === "forgot"
-                  ? "请联系站点管理员完成身份核验，获取一次性重设令牌。"
-                  : "输入管理员提供的一次性令牌和新密码。"}
+                  ? t('auth26')
+                  : t('auth27')}
           </p>
           {sent ? (
             <div className="success-panel">
               <Check size={24} />
-              <h3>请求已收到</h3>
+              <h3>{t('auth28')}</h3>
               <p>
-                请联系站点管理员完成身份验证，并获取一次性重设令牌。此站点暂未接入邮件发送服务。
+                {recoveryMail ? t('auth29') : t('auth30')}
               </p>
               <Link className="btn btn-primary" to="/reset-password">
-                我已有重设令牌
-              </Link>
+                {t('auth31')}</Link>
             </div>
           ) : (
             <form onSubmit={submit} className="form-stack" noValidate aria-busy={busy}
@@ -189,13 +188,12 @@ export function AuthPage({
                 if (['password', 'newPassword'].includes(input.name)) {
                   setPassword(input.value);
                   const confirm = e.currentTarget.elements.namedItem('confirmPassword') as HTMLInputElement | null;
-                  if (confirm?.value) setFields(previous => ({ ...previous, confirmPassword: confirm.value !== input.value ? '两次输入的密码不一致' : '' }));
+                  if (confirm?.value) setFields(previous => ({ ...previous, confirmPassword: confirm.value !== input.value ? 'auth4' as const : '' }));
                 }
               }}>
               {(mode === "login" || mode === "register") && (
                 <label>
-                  用户名
-                  <input
+                  {t('auth32')}<input
                     name="username"
                     required
                     autoComplete="username"
@@ -203,14 +201,14 @@ export function AuthPage({
                     minLength={3}
                     maxLength={mode === "register" ? 24 : 254}
                     placeholder={
-                      mode === "login" ? "用户名或邮箱" : "你的用户名"
+                      mode === "login" ? t('auth33') : t('auth34')
                     }
                     pattern={
                       mode === "register" ? "[A-Za-z0-9_]{3,24}" : undefined
                     }
                     title={
                       mode === "register"
-                        ? "3–24 位英文字母、数字或下划线"
+                        ? t('auth35')
                         : undefined
                     }
                   />
@@ -219,24 +217,22 @@ export function AuthPage({
               {mode === "register" && (
                 <>
                   <label>
-                    显示名称
-                    <input
+                    {t('auth36')}<input
                       name="displayName"
                       required
                       minLength={1}
                       maxLength={50}
                       autoComplete="nickname"
-                      placeholder="朋友们如何称呼你"
+                      placeholder={t('auth37')}
                     />
                   </label>
                   <label>
-                    邮箱
-                    <input
+                    {t('auth38')}<input
                       name="email"
                       type="email"
                       required
                       autoComplete="email"
-                      placeholder="you@example.com"
+                      placeholder={t('authEmailExample')}
                       maxLength={254}
                     />
                   </label>
@@ -244,33 +240,31 @@ export function AuthPage({
               )}
               {mode === "forgot" && (
                 <label>
-                  注册邮箱
-                  <input
+                  {t('auth39')}<input
                     name="email"
                     type="email"
                     required
                     autoComplete="email"
                     autoFocus
-                    placeholder="you@example.com"
+                    placeholder={t('authEmailExample')}
                   />
                 </label>
               )}
               {mode === "reset" && (
                 <label>
-                  重设令牌
-                  <input
+                  {t('auth40')}<input
                     name="token"
                     defaultValue={recoveryToken}
                     required
                     autoComplete="off"
                     autoFocus
-                    placeholder="粘贴一次性令牌"
+                    placeholder={t('auth41')}
                   />
                 </label>
               )}
               {mode !== "forgot" && (
                 <label>
-                  {mode === "reset" ? "新密码" : "密码"}
+                  {mode === "reset" ? t('auth42') : t('auth43')}
                   <span className="password-field">
                     <input
                       name={mode === "reset" ? "newPassword" : "password"}
@@ -282,12 +276,12 @@ export function AuthPage({
                         mode === "login" ? "current-password" : "new-password"
                       }
                       placeholder={
-                        mode === "login" ? "输入密码" : "至少 10 个字符"
+                        mode === "login" ? t('auth44') : t('auth45')
                       }
                     />
                     <button
                       type="button"
-                      aria-label={show ? "隐藏密码" : "显示密码"}
+                      aria-label={show ? t('auth46') : t('auth47')}
                       aria-pressed={show}
                       onClick={() => setShow(!show)}
                     >
@@ -298,18 +292,17 @@ export function AuthPage({
               )}
               {(mode === 'register' || mode === 'reset') && <>
                 <div className="password-strength" role="status" aria-live="polite">
-                  <meter min={0} max={4} value={strength} aria-label="密码强度" />
-                  <small>{password ? `密码强度：${['较弱', '较弱', '一般', '良好', '较强'][strength]}` : '建议组合大小写字母、数字与符号'}</small>
+                  <meter min={0} max={4} value={strength} aria-label={t('auth48')} />
+                  <small>{password ? t('authPasswordStrength', {strength: [t('auth49'), t('auth49'), t('auth50'), t('auth51'), t('auth52')][strength]}) : t('auth53')}</small>
                 </div>
-                <label>确认密码<input name="confirmPassword" type={show ? 'text' : 'password'} autoComplete="new-password" required placeholder="再次输入密码" aria-describedby="auth-field-errors" /></label>
+                <label>{t('auth54')}<input name="confirmPassword" type={show ? 'text' : 'password'} autoComplete="new-password" required placeholder={t('auth55')} aria-describedby="auth-field-errors" /></label>
               </>}
-              <div id="auth-field-errors" aria-live="polite">{Object.entries(fields).filter(([, message]) => message).map(([name, message]) => <p className="field-error" key={name}>{message}</p>)}</div>
+              <div id="auth-field-errors" aria-live="polite">{Object.entries(fields).filter(([, message]) => message).map(([name, message]) => <p className="field-error" key={name}>{message && t(message)}</p>)}</div>
               {mode === "login" && (
                 <div className="form-helper">
                   <span>
-                    <ShieldCheck size={14} /> 安全会话登录
-                  </span>
-                  <Link to="/forgot-password">忘记密码？</Link>
+                    <ShieldCheck size={14} /> {t('auth56')}</span>
+                  <Link to="/forgot-password">{t('auth57')}</Link>
                 </div>
               )}
               {error && (
@@ -323,14 +316,14 @@ export function AuthPage({
                 className="btn btn-primary btn-large"
               >
                 {busy
-                  ? "正在处理…"
+                  ? t('auth58')
                   : mode === "login"
-                    ? "登录泊岸"
+                    ? t('auth59')
                     : mode === "register"
-                      ? "创建账号"
+                      ? t('auth60')
                       : mode === "forgot"
-                        ? "提交恢复申请"
-                        : "重设密码"}
+                        ? t('auth61')
+                        : t('auth62')}
                 <ArrowRight size={18} />
               </button>
             </form>
@@ -338,24 +331,25 @@ export function AuthPage({
           <div className="auth-switch">
             {mode === "login" ? (
               <>
-                还没有账号？ <Link to="/register">立即注册</Link>
+                {t('auth63')}<Link to="/register">{t('auth64')}</Link>
               </>
             ) : mode === "register" ? (
               <>
-                已经有账号？ <Link to="/login">前往登录</Link>
+                {t('auth65')}<Link to="/login">{t('auth66')}</Link>
               </>
             ) : (
-              <Link to="/login">返回登录</Link>
+              <Link to="/login">{t('auth67')}</Link>
             )}
           </div>
           <p className="auth-note">
             {mode === "register"
-              ? "请使用独立且足够长的密码，保护你的聊天账号。"
-              : "属于你的对话，始终在这里。"}
+              ? t('auth68')
+              : t('auth69')}
           </p>
         </div>
-        <div className="auth-bottom">以你的节奏，保持连接。</div>
+        <div className="auth-bottom">{t('auth70')}</div>
       </section>
+      {appearanceOpen && <Dialog title={t('appearanceTitle')} onClose={() => setAppearanceOpen(false)}><AppearanceSettings /></Dialog>}
     </main>
   );
 }

@@ -18,9 +18,19 @@ model User {
   role             String               @default("USER")
   status           String               @default("OFFLINE")
   banned           Boolean              @default(false)
+  bannedUntil      DateTime?
+  banReason        String               @default("")
+  banActorId       String?
+  reports          Report[]             @relation("Reporter")
+  handledReports   Report[]             @relation("ReportHandler")
   lastSeenAt       DateTime             @default(now())
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
+  announcements    GroupAnnouncement[]
+  announcementReads GroupAnnouncementRead[]
+  groupMutesIssued GroupMute[]
+  forwardBatches   ForwardBatch[]
+  preference       UserPreference?
   sessions         Session[]
   friendships      Friendship[]         @relation("FriendshipUser")
   friends          Friendship[]         @relation("FriendshipFriend")
@@ -89,6 +99,7 @@ model Conversation {
   updatedAt   DateTime             @updatedAt
   members     ConversationMember[]
   messages    Message[]
+  announcements GroupAnnouncement[]
   channel     Channel?
 }
 
@@ -99,6 +110,7 @@ model ConversationMember {
   joinedAt        DateTime     @default(now())
   lastReadAt      DateTime     @default(now())
   lastDeliveredAt DateTime     @default(now())
+  mute            GroupMute?
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -112,6 +124,7 @@ model Message {
   senderId       String
   content        String              @default("")
   clientId       String
+  forwardedFrom  Json?
   replyToId      String?
   createdAt      DateTime            @default(now())
   editedAt       DateTime?
@@ -126,6 +139,8 @@ model Message {
 
   @@unique([senderId, clientId])
   @@index([conversationId, createdAt, id])
+  @@index([conversationId, senderId, createdAt, id])
+  @@index([content(ops: raw("gin_trgm_ops"))], type: Gin, map: "Message_content_trgm_idx")
 }
 
 model MessageAttachment {
@@ -285,4 +300,79 @@ model ServerInvite {
   server    Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   @@index([serverId, createdAt])
+}
+
+model UserPreference {
+  userId String @id
+  sound Json
+  appearance Json?
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ForwardBatch {
+  id String @id @default(cuid())
+  userId String
+  clientId String
+  payloadHash String
+  messageIds Json
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, clientId])
+}
+
+model GroupAnnouncement {
+  id String @id @default(cuid())
+  conversationId String
+  authorId String
+  title String
+  content String
+  pinned Boolean @default(false)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  reads GroupAnnouncementRead[]
+  @@index([conversationId, deletedAt, pinned, createdAt])
+}
+model GroupAnnouncementRead {
+  announcementId String
+  userId String
+  version Int
+  readAt DateTime @default(now())
+  announcement GroupAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([announcementId, userId])
+}
+model GroupMute {
+  conversationId String
+  userId String
+  actorId String
+  reason String
+  until DateTime?
+  permanent Boolean @default(false)
+  updatedAt DateTime @updatedAt
+  member ConversationMember @relation(fields: [conversationId, userId], references: [conversationId, userId], onDelete: Cascade)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  @@id([conversationId, userId])
+}
+
+model Report {
+  id String @id @default(cuid())
+  reporterId String
+  targetType String
+  targetId String
+  reason String
+  details String
+  status String @default("OPEN")
+  handlerId String?
+  resolution String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reporter User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  handler User? @relation("ReportHandler", fields: [handlerId], references: [id], onDelete: SetNull)
+  @@index([status, createdAt, id])
+  @@index([reporterId, createdAt])
 }
