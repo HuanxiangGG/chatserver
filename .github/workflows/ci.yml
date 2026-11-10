@@ -5,7 +5,8 @@ on:
   pull_request:
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Keep browser system dependencies reproducible when ubuntu-latest moves.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17-alpine
@@ -41,6 +42,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npx playwright install --with-deps chromium webkit
+        timeout-minutes: 10
       - name: Browser viewport and real message acceptance
         run: npm run test:browser:ci
         env:
