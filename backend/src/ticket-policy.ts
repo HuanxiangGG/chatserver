@@ -1,12 +1,9 @@
 import type { Prisma } from '@prisma/client';
 import { prisma, HttpError } from './context.js';
+import { effectiveServerPermissions } from './community-permissions.js';
 async function eligibleHandler(serverId: string, userId: string, db: Prisma.TransactionClient) {
-  const member = await db.serverMember.findUnique({ where: { serverId_userId: { serverId, userId } } });
-  if (!member) return false;
-  if (['OWNER','ADMIN','MODERATOR'].includes(member.role)) return true;
-  let allowed = false;
-  for (const role of await db.serverRole.findMany({ where: { serverId, members: { some: { userId } } }, select: { permissions: true }, orderBy: [{ position: 'asc' }, { id: 'asc' }] })) { const value = (role.permissions as {handleTickets?: boolean}).handleTickets; if (typeof value === 'boolean') allowed = value; }
-  return allowed;
+  try { return (await effectiveServerPermissions(serverId, userId, db)).permissions.handleTickets; }
+  catch (error) { if (error instanceof HttpError && error.status === 403) return false; throw error; }
 }
 export async function ticketPermission(conversationId: string, userId: string, write = false, db: Prisma.TransactionClient = prisma) {
   const ticket = await db.ticket.findUnique({ where: { conversationId }, include: { server: { select: { ownerId: true } } } });

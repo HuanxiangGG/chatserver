@@ -107,6 +107,6 @@ export interface CommunityDetail extends Community {
   permissions: CommunityPermissions;
   roles: CommunityRole[];
   categories: { id: string; name: string; position: number }[];
-  members: { userId: string; role: ServerRole; mutedUntil: string | null; user: User }[];
+  members: { userId: string; role: ServerRole; mutedUntil: string | null; ticketEligible: boolean; user: User }[];
   channels: { id: string; conversationId: string; categoryId: string | null; position: number; isPrivate: boolean; readOnly: boolean; archivedAt?:string|null; permissions:CommunityPermissions; permissionOverrides?:Partial<CommunityPermissions>; roleOverrides?:{roleId:string;permissions:Partial<CommunityPermissions>}[]; conversation: { name: string; description: string }; grants: { userId: string }[] }[];
 }

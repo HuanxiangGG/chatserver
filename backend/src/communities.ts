@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomBytes, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { prisma, requireAuth, validate, HttpError, asyncRoute, publicUserSelect, consumeLimit } from './context.js';
-import { managers, moderators, serverMember, serverPermission, lockServer, syncChannelReaders, channelPermissions, channelPermission, effectiveServerPermissions, serverCapability, capabilities } from './channel-policy.js';
+import { managers, moderators, serverMember, serverPermission, lockServer, syncChannelReaders, channelPermissions, channelPermission, effectiveServerPermissions, resolveServerPermissions, serverCapability, capabilities } from './channel-policy.js';
 import { emitUsers } from './realtime.js';
 import { syncTicketReaders } from './ticket-policy.js';
 import { welcomeJoined } from './bots.js';
@@ -57,7 +57,8 @@ async function serverDetail(serverId: string, userId: string, preview = false) {
   } });
   const channels = [];
   for (const channel of server.channels) { const { permissions } = await channelPermissions(channel, userId, prisma, preview); if (permissions.view) channels.push({ ...channel, permissions }); }
-  return { ...server, channels, role: actor.role, permissions: actor.permissions };
+  const members = server.members.map(member => ({ ...member, ticketEligible: resolveServerPermissions(member, server.roles.filter(role => role.members.some(m => m.userId === member.userId))).permissions.handleTickets }));
+  return { ...server, members, channels, role: actor.role, permissions: actor.permissions };
 }
 router.get('/servers/:id', asyncRoute(async (req, res) => res.json(await serverDetail(validate(id, req.params.id), req.user.id))));
 router.get('/servers/:id/preview', asyncRoute(async (req, res) => {

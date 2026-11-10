@@ -216,3 +216,27 @@ it('community settings and ownership transfer remain scoped and refresh inherite
   expect((await api(owner).post(`/servers/${community}/transfer`, { userId: owner.user.id })).status).toBe(403);
   expect(await prisma.message.count({ where: { id: messageId } })).toBe(1);
 });
+it('uses one handler policy for promoted moderators, assignment and immediate reader revocation', async () => {
+  // Custom assignments may survive a built-in role promotion. Explicit denies
+  // must keep the same meaning in settings, assignment and existing tickets.
+  const role = await api(extra).post(`/servers/${community}/roles`, { name: '工单权限关闭', position: 40, permissions: { handleTickets: false } }); expect(role.status).toBe(201);
+  expect((await api(extra).patch(`/servers/${community}/members/${moderator.user.id}`, { role: 'MEMBER' })).status).toBe(200);
+  expect((await api(extra).put(`/servers/${community}/roles/${role.body.id}/members`, { userIds: [moderator.user.id] })).status).toBe(200);
+  expect((await api(extra).patch(`/servers/${community}/members/${moderator.user.id}`, { role: 'MODERATOR' })).status).toBe(200);
+  const policy = await api(moderator).get(`/servers/${community}`); expect(policy.body.role).toBe('MODERATOR'); expect(policy.body.permissions.handleTickets).toBe(false); expect(policy.body.members.find((m: any) => m.userId === moderator.user.id).ticketEligible).toBe(false);
+  const ticket = await api(extra).post(`/servers/${community}/tickets`, { memberId: owner.user.id, subject: '版主处理权一致性', category: '支持', content: '此工单不属于版主', clientId: randomUUID() }); expect(ticket.status).toBe(201);
+  expect((await api(extra).patch(`/tickets/${ticket.body.id}`, { assigneeId: moderator.user.id })).status).toBe(403);
+  expect((await api(extra).patch(`/servers/${community}/roles/${role.body.id}`, { permissions: { handleTickets: true } })).status).toBe(200);
+  expect((await api(extra).get(`/servers/${community}`)).body.members.find((m: any) => m.userId === moderator.user.id).ticketEligible).toBe(true);
+  expect((await api(extra).patch(`/tickets/${ticket.body.id}`, { assigneeId: moderator.user.id })).status).toBe(200);
+  expect((await api(moderator).get(`/tickets/${ticket.body.id}`)).status).toBe(200);
+  const watcher = await connect(moderator), leaked: any[] = []; watcher.on('message:new', value => leaked.push(value));
+  expect((await api(extra).patch(`/servers/${community}/roles/${role.body.id}`, { permissions: { handleTickets: false } })).status).toBe(200);
+  expect((await api(moderator).get(`/tickets/${ticket.body.id}`)).status).toBe(403);
+  expect((await api(extra).get(`/servers/${community}`)).body.members.find((m: any) => m.userId === moderator.user.id).ticketEligible).toBe(false);
+  expect((await api(moderator).get(`/servers/${community}/tickets`)).body.tickets.some((t: any) => t.id === ticket.body.id)).toBe(false);
+  expect((await api(moderator).get('/conversations')).body.some((c: any) => c.id === ticket.body.conversationId)).toBe(false);
+  expect(await prisma.conversationMember.count({ where: { conversationId: ticket.body.conversationId, userId: moderator.user.id } })).toBe(0);
+  expect((await send(extra, ticket.body.conversationId, 'ROLE_REVOKE_TICKET')).status).toBe(201);
+  await watcher.timeout(3000).emitWithAck('presence:set', { status: 'ONLINE' }); expect(leaked.some(m => m.conversationId === ticket.body.conversationId)).toBe(false); watcher.disconnect();
+});
