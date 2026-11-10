@@ -21,6 +21,18 @@ const request = (await call('/friend-requests', 'POST', { userId: b.user.id }, a
 await call(`/friend-requests/${request.id}/respond`, 'POST', { accept: true }, b);
 const group = (await call('/conversations/group', 'POST', { name: 'Interface acceptance', description: 'Disposable real API browser validation', userIds: [b.user.id] }, a)).data;
 for (let i = 0; i < 20; i++) await call(`/conversations/${group.id}/messages`, 'POST', { content: i === 18 ? `${'long_text_'.repeat(70)}\n多行消息与 Emoji 🌊✨` : `Interface regression message ${i}`, clientId: randomUUID() }, i % 2 ? a : b);
+// Keep diagnostics useful without leaking cookies, URL query tokens or message bodies.
+function resourcePath(value) {
+ try { const url = new URL(value); return `${url.protocol}//${url.host}${url.pathname}`; } catch { return '<unknown resource>'; }
+}
+function browserErrorText(value) {
+ const text = String(value);
+ // Only browser/Vite-generated transport diagnostics are safe to include verbatim.
+ if (!/^(Failed to load resource|WebSocket|The resource|Load failed|net::ERR_|NS_ERROR_|cancelled|\[vite\])/i.test(text)) return '<console text withheld; inspect location and failed requests>';
+ return text.replace(/(?:https?|wss?):\/\/[^\s'"<>]+/g, resourcePath)
+  .replace(/(?:Bearer\s+)[^\s,;]+/gi, 'Bearer <redacted>')
+  .replace(/(?:password|cookie|token|authorization)(?:[=:]\s*)[^\s,;]+/gi, '<sensitive field redacted>').slice(0, 400);
+}
 const results = [];
 for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
  const browser = await browserType.launch({ headless: true }); let peer;
@@ -34,8 +46,15 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
     window.testKeyboardViewport = (height, offset = 0) => { viewport.height = height; viewport.offsetTop = offset; viewport.dispatchEvent(new Event('resize')); viewport.dispatchEvent(new Event('scroll')); };
    });
    const separator = a.cookie.indexOf('='); await context.addCookies([{ name: a.cookie.slice(0, separator), value: a.cookie.slice(separator + 1), url: base.origin, httpOnly: true, sameSite: 'Lax' }]);
-   const page = await context.newPage(), errors = [];
-   page.on('pageerror', () => errors.push('Uncaught page exception')); page.on('console', message => { if (message.type() === 'error') errors.push('Browser console error'); });
+   const page = await context.newPage(), errors = [], requests = [];
+   page.on('pageerror', error => errors.push({ kind: 'pageerror', name: error.name, message: browserErrorText(error.message) }));
+   page.on('console', message => {
+    if (message.type() !== 'error') return;
+    const location = message.location();
+    errors.push({ kind: 'console', message: browserErrorText(message.text()), resource: resourcePath(location.url), line: location.lineNumber, column: location.columnNumber });
+   });
+   page.on('requestfailed', request => requests.push({ kind: 'requestfailed', method: request.method(), type: request.resourceType(), resource: resourcePath(request.url()), failure: browserErrorText(request.failure()?.errorText || '') }));
+   page.on('response', response => { if (response.status() >= 400) requests.push({ kind: 'response', status: response.status(), resource: resourcePath(response.url()), type: response.request().resourceType() }); });
    try {
     await page.goto(`${base.origin}/chat/${group.id}`); await page.locator('.composer textarea').waitFor();
     await page.waitForFunction(() => document.querySelector('.connection-hidden'));
@@ -95,7 +114,11 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
      assert.equal(clipped,0,`${engine}/${width}/${name}: content clipping`);
      await page.screenshot({path:new URL(`${engine}-${width}-${name}.png`,output).pathname});
     }
-   } catch (error) { await page.screenshot({ path: new URL(`${engine}-${width}-failure.png`, output).pathname }).catch(() => {}); throw error; }
+    } catch (error) {
+    await writeFile(new URL(`${engine}-${width}-diagnostics.json`, output), JSON.stringify({ engine, width, errors, requests, completed: results }, null, 2), { mode: 0o600 });
+    await page.screenshot({ path: new URL(`${engine}-${width}-failure.png`, output).pathname }).catch(() => {});
+    throw error;
+   }
    finally { await context.close(); }
   }
  } finally { peer?.disconnect(); await browser.close(); }
