@@ -206,6 +206,14 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
         }
         if (!(await guestSwitch.isChecked())) await guestSwitch.check();
         await op.locator("#ticket-settings input[readonly]").waitFor();
+        // The link is optimistic UI. Wait for the actual save + refresh before
+        // replacing the document, rather than cancelling its pending reads.
+        await op.waitForFunction(() => {
+          const inputs = [...document.querySelectorAll('#ticket-settings input[type=checkbox]')];
+          return inputs.length === 2 && inputs.every(input => input.checked && !input.disabled);
+        });
+        await op.waitForLoadState("networkidle");
+        assert.equal(await op.evaluate(() => window.controlsUnhandled || 0), 0);
         await op.reload();
         await op.locator("#ticket-settings").waitFor();
         assert(await guestSwitch.isChecked());
