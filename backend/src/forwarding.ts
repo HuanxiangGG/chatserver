@@ -31,7 +31,7 @@ router.post('/conversations/:id/forward', asyncRoute(async (req, res) => {
     const locations = await tx.message.findMany({ where: { id: { in: input.sourceIds } }, select: { conversationId: true } });
     for (const id of [...new Set([target, ...locations.map(m => m.conversationId)])].sort()) await lockConversation(tx, id);
     await writable(target, req.user.id, tx);
-    const sources = await tx.message.findMany({ where: { id: { in: input.sourceIds }, retractedAt: null, hidden: { none: { userId: req.user.id } } }, include: { attachments: true, sender: { select: { displayName: true } } } });
+    const sources = await tx.message.findMany({ where: { id: { in: input.sourceIds }, retractedAt: null, hidden: { none: { userId: req.user.id } } }, include: { attachments: true, guestTicket: { select: { guestName: true } }, sender: { select: { displayName: true } } } });
     if (sources.length !== input.sourceIds.length) throw new HttpError(403, '部分原消息不可访问', 'FORWARD_SOURCE_UNAVAILABLE');
     for (const source of sources) await membership(source.conversationId, req.user.id, tx);
     if (sources.some(s => s.attachments.length)) { const access = await channelPermission(target, req.user.id, true, tx); if (access && !access.permissions.upload) throw new HttpError(403, '此频道不允许上传文件', 'CHANNEL_UPLOAD_FORBIDDEN'); }
@@ -42,7 +42,7 @@ router.post('/conversations/:id/forward', asyncRoute(async (req, res) => {
     const ids: string[] = [];
     for (const id of input.sourceIds) {
      const source = sources.find(m => m.id === id)!;
-     const message = await tx.message.create({ data: { conversationId: target, senderId: req.user.id, content: source.content, clientId: `${input.clientId}:${id}`, ...(input.mode === 'quote' ? { forwardedFrom: { senderName: source.sender.displayName, sentAt: source.createdAt.toISOString() } } : {}) } });
+     const message = await tx.message.create({ data: { conversationId: target, senderId: req.user.id, content: source.content, clientId: `${input.clientId}:${id}`, ...(input.mode === 'quote' ? { forwardedFrom: { senderName: source.sender?.displayName ?? source.guestTicket?.guestName ?? '', sentAt: source.createdAt.toISOString() } } : {}) } });
      for (const attachment of source.attachments) {
       if (!/^[a-f0-9-]+\.[a-z0-9]+$/.test(attachment.storageKey)) throw new HttpError(400, '附件存储标识无效', 'FILE_INVALID');
       const storageKey = `${randomUUID()}${path.extname(attachment.storageKey)}`, destination = path.join(config.uploadDir, storageKey);

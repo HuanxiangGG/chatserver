@@ -1,3 +1,4 @@
+import { guestAccess, guestCookie, secretEqual } from './guest-access.js';
 import { assertNotGroupMuted } from './group-policy.js';
 import { channelPermission } from './channel-policy.js';
 import { isTrustedOrigin } from './context.js';
@@ -24,6 +25,14 @@ const ttl = 75_000;
 export function emitUsers(userIds: string[], event: string, payload: unknown) {
   const rooms = [...new Set(userIds)].map(userRoom);
   if (rooms.length) io?.to(rooms).emit(event, payload);
+  const data = payload as { conversationId?: string; id?: string } | null;
+  const conversationId = data?.conversationId ?? (event === 'conversation:updated' ? data?.id : undefined);
+  if (io && conversationId && ['message:new','message:updated','conversation:updated','ticket:updated'].includes(event)) {
+    // Query live credentials before delivery; guests never join human user rooms.
+    void prisma.guestTicketSession.findMany({ where: { expiresAt: { gt: new Date() }, ticket: { conversationId } }, select: { id: true } }).then(sessions => {
+      for (const s of sessions) io?.of('/guest-tickets').to(`guest-session:${s.id}`).emit('ticket:changed', { conversationId });
+    }).catch(() => console.error('Guest realtime delivery unavailable'));
+  }
 }
 export function disconnectUser(userId: string) { io?.in(userRoom(userId)).disconnectSockets(true); }
 export function disconnectSession(sessionId: string) { io?.in(sessionRoom(sessionId)).disconnectSockets(true); }
@@ -112,6 +121,26 @@ export async function initRealtime(server: HttpServer) {
       socket.data.auth = { token, userId: auth.user.id, sessionId: auth.session.id };
       next();
     } catch (error) { next(new Error(error instanceof HttpError ? error.message : '连接不可用')); }
+  });
+  const guests = io.of('/guest-tickets');
+  guests.use(async (socket, next) => {
+    try {
+      if (!isTrustedOrigin(String(socket.handshake.headers.origin ?? ''))) throw new HttpError(403, '不允许的来源');
+      const { serverId, ticketId, csrfToken } = validate(z.strictObject({ serverId: z.string().min(1).max(100), ticketId: z.string().min(1).max(100), csrfToken: z.string().length(64) }), socket.handshake.auth);
+      const token = parse(socket.handshake.headers.cookie ?? '')[guestCookie(ticketId)];
+      const session = await guestAccess(serverId, ticketId, token);
+      if (!secretEqual(session.csrfToken, csrfToken)) throw new HttpError(403, '无效的安全令牌');
+      await consumeLimit(`guest-socket:${session.ticketId}`, 60, 60);
+      socket.data.guest = session;
+      next();
+    } catch { next(new Error('GUEST_ACCESS_DENIED')); }
+  });
+  guests.on('connection', socket => {
+    const session = socket.data.guest as {id:string;expiresAt:Date};
+    void socket.join(`guest-session:${session.id}`);
+    const expire = setTimeout(() => socket.disconnect(true), Math.min(2147483647, session.expiresAt.getTime()-Date.now()));
+    socket.once('disconnect', () => clearTimeout(expire));
+    socket.emit('session:ready', { serverTime: Date.now() });
   });
   io.on('connection', socket => {
     const data = socket.data.auth as { token: string; userId: string; sessionId: string };

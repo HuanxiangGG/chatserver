@@ -13,14 +13,15 @@ router.use(requireAuth);
 const idSchema = z.string().min(1).max(100);
 const attachmentSelect = { id: true, filename: true, mimeType: true, size: true } as const;
 export const messageInclude = {
+  guestTicket: { select: { id: true, guestName: true } },
   sender: { select: publicUserSelect }, attachments: { select: attachmentSelect },
-  replyTo: { select: { id: true, content: true, retractedAt: true, attachments: { select: attachmentSelect }, sender: { select: { id: true, displayName: true } } } },
+  replyTo: { select: { guestTicket: { select: { id: true, guestName: true } }, id: true, content: true, retractedAt: true, attachments: { select: attachmentSelect }, sender: { select: { id: true, displayName: true } } } },
   reads: { select: { userId: true, deliveredAt: true, readAt: true } },
 } as const;
 type FullMessage = Prisma.MessageGetPayload<{ include: typeof messageInclude }>;
 export function serializeMessage(message: FullMessage) {
-  return { ...message, content: message.retractedAt ? '' : message.content,
-    replyTo: message.replyTo ? { ...message.replyTo, content: message.replyTo.retractedAt ? '' : message.replyTo.content, attachments: message.replyTo.retractedAt ? [] : message.replyTo.attachments } : null,
+  return { ...message, senderId: message.senderId ?? `guest:${message.guestTicketId}`, sender: message.sender ?? { id: `guest:${message.guestTicketId}`, displayName: message.guestTicket?.guestName ?? '', role: 'GUEST', username: '', avatarUrl: null, bio: '', status: 'OFFLINE', lastSeenAt: message.createdAt }, guestTicket: undefined, content: message.retractedAt ? '' : message.content,
+    replyTo: message.replyTo ? { ...message.replyTo, sender: message.replyTo.sender ?? { id: `guest:${message.replyTo.guestTicket?.id}`, displayName: message.replyTo.guestTicket?.guestName ?? '' }, guestTicket: undefined, content: message.replyTo.retractedAt ? '' : message.replyTo.content, attachments: message.replyTo.retractedAt ? [] : message.replyTo.attachments } : null,
     attachments: message.retractedAt ? [] : message.attachments.map(a => ({ ...a, originalName: a.filename, url: `/api/uploads/${a.id}` })) };
 }
 export async function membership(conversationId: string, userId: string, db: Prisma.TransactionClient = prisma) {
@@ -70,9 +71,9 @@ export async function writable(id: string, userId: string, db: Prisma.Transactio
 
 router.get('/conversations', asyncRoute(async (req, res) => {
   const conversations = await prisma.conversation.findMany({ where: { members: { some: { userId: req.user.id } } }, orderBy: { updatedAt: 'desc' }, take: 200,
-    include: { ticket: true, channel: true, members: { include: { user: { select: publicUserSelect } } }, messages: { where: { hidden: { none: { userId: req.user.id } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1, include: messageInclude } } });
+    include: { ticket: { select: { id: true, serverId: true, memberId: true, assigneeId: true, guestName: true, subject: true, status: true } }, channel: true, members: { include: { user: { select: publicUserSelect } } }, messages: { where: { hidden: { none: { userId: req.user.id } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1, include: messageInclude } } });
   res.json(await Promise.all(conversations.map(async c => {
-    const unreadCount = await prisma.message.count({ where: { conversationId: c.id, senderId: { not: req.user.id }, reads: { none: { userId: req.user.id, readAt: { not: null } } }, hidden: { none: { userId: req.user.id } }, retractedAt: null } });
+    const unreadCount = await prisma.message.count({ where: { conversationId: c.id, OR: [{ senderId: { not: req.user.id } }, { senderId: null }], reads: { none: { userId: req.user.id, readAt: { not: null } } }, hidden: { none: { userId: req.user.id } }, retractedAt: null } });
     const { messages, ...rest } = c;
     return { ...rest, lastMessage: messages[0] ? serializeMessage(messages[0]) : null, unreadCount };
   })));
@@ -82,7 +83,7 @@ router.post('/conversations/direct', asyncRoute(async (req, res) => {
   if (userId === req.user.id) throw new HttpError(400, '不能与自己创建私聊');
   await assertFriends(req.user.id, [userId]);
   const directKey = [req.user.id, userId].sort().join(':');
-  const conversation = await prisma.conversation.upsert({ where: { directKey }, update: {}, create: { type: 'DIRECT', directKey, members: { create: [{ userId: req.user.id }, { userId }] } }, include: { ticket: true, channel: true, members: { include: { user: { select: publicUserSelect } } } } });
+  const conversation = await prisma.conversation.upsert({ where: { directKey }, update: {}, create: { type: 'DIRECT', directKey, members: { create: [{ userId: req.user.id }, { userId }] } }, include: { ticket: { select: { id: true, serverId: true, memberId: true, assigneeId: true, guestName: true, subject: true, status: true } }, channel: true, members: { include: { user: { select: publicUserSelect } } } } });
   await notifyConversation(conversation.id);
   res.status(201).json(conversation);
 }));
@@ -92,13 +93,13 @@ router.post('/conversations/group', asyncRoute(async (req, res) => {
   const userIds = [...new Set(data.userIds)].filter(id => id !== req.user.id);
   if (!userIds.length) throw new HttpError(400, '请至少邀请一位好友');
   await assertFriends(req.user.id, userIds);
-  const conversation = await prisma.conversation.create({ data: { type: 'GROUP', name: data.name, description: data.description, members: { create: [{ userId: req.user.id, role: 'OWNER' }, ...userIds.map(userId => ({ userId, role: 'MEMBER' }))] } }, include: { ticket: true, channel: true, members: { include: { user: { select: publicUserSelect } } } } });
+  const conversation = await prisma.conversation.create({ data: { type: 'GROUP', name: data.name, description: data.description, members: { create: [{ userId: req.user.id, role: 'OWNER' }, ...userIds.map(userId => ({ userId, role: 'MEMBER' }))] } }, include: { ticket: { select: { id: true, serverId: true, memberId: true, assigneeId: true, guestName: true, subject: true, status: true } }, channel: true, members: { include: { user: { select: publicUserSelect } } } } });
   await notifyConversation(conversation.id);
   res.status(201).json(conversation);
 }));
 router.get('/conversations/:id', asyncRoute(async (req, res) => {
   const id = validate(idSchema, req.params.id); await membership(id, req.user.id);
-  const conversation = await prisma.conversation.findUnique({ where: { id }, include: { ticket: true, channel: true, members: { include: { user: { select: publicUserSelect } } } } });
+  const conversation = await prisma.conversation.findUnique({ where: { id }, include: { ticket: { select: { id: true, serverId: true, memberId: true, assigneeId: true, guestName: true, subject: true, status: true } }, channel: true, members: { include: { user: { select: publicUserSelect } } } } });
   const access = await channelPermission(id, req.user.id);
   const ticket = await ticketPermission(id, req.user.id);
   const channelWritable = (!access || access.permissions.send) && ticket?.status !== 'CLOSED';
@@ -106,7 +107,7 @@ router.get('/conversations/:id', asyncRoute(async (req, res) => {
   const muted = !!groupMute && groupMute.member.role !== 'OWNER' && (groupMute.permanent || !!groupMute.until && groupMute.until > new Date());
   const announcements = conversation?.type === 'GROUP' ? await prisma.groupAnnouncement.findMany({ where: { conversationId: id, deletedAt: null }, select: { version: true, reads: { where: { userId: req.user.id }, select: { version: true } } } }) : [];
   const unreadAnnouncements = announcements.filter(row => row.reads[0]?.version !== row.version).length;
-  res.json({ ...conversation, unreadAnnouncements, canWrite: channelWritable && !muted, permissions: access?.permissions ?? null, mute: muted ? { permanent: groupMute!.permanent, until: groupMute!.until, reason: groupMute!.reason } : null });
+  res.json({ ...conversation, unreadAnnouncements, canWrite: channelWritable && !muted, permissions: access?.permissions ?? null, channelRestriction: access?.restriction ?? null, mute: muted ? { permanent: groupMute!.permanent, until: groupMute!.until, reason: groupMute!.reason } : null });
 }));
 router.patch('/conversations/:id', asyncRoute(async (req, res) => {
   const id = validate(idSchema, req.params.id); await assertGroupAdmin(id, req.user.id);
@@ -249,7 +250,7 @@ router.patch('/messages/:id', asyncRoute(async (req, res) => {
   });
   emitUsers(await messageAudience(id, message.conversationId), 'message:updated', serializeMessage(updated)); res.json(serializeMessage(updated));
 }));
-async function retractPermission(conversationId: string, senderId: string, userId: string, db: Prisma.TransactionClient = prisma) {
+async function retractPermission(conversationId: string, senderId: string | null, userId: string, db: Prisma.TransactionClient = prisma) {
   if (senderId === userId) { await writable(conversationId, userId, db); return; }
   await membership(conversationId, userId, db); await assertNotGroupMuted(conversationId, userId, db);
   const access = await channelPermission(conversationId, userId, false, db);

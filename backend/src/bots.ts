@@ -62,7 +62,8 @@ async function postBotMessage(installationId: string, conversationId: string, co
   if (message.created) await deliver(message.message); return serializeMessage(message.message);
 }
 // Hooks consume only human channel messages, never tickets, DMs, bot messages, or uploads.
-export async function queueBotEvents(message: { id: string; conversationId: string; senderId: string; content: string; createdAt: Date }, db: Prisma.TransactionClient = prisma) {
+export async function queueBotEvents(message: { id: string; conversationId: string; senderId: string | null; content: string; createdAt: Date }, db: Prisma.TransactionClient = prisma) {
+  if (!message.senderId) return;
   const sender = await db.user.findUnique({ where: { id: message.senderId }, select: { role: true, displayName: true } });
   if (!sender || sender.role === 'BOT') return;
   const channel = await db.channel.findUnique({ where: { conversationId: message.conversationId } }); if (!channel || channel.archivedAt) return;
@@ -138,7 +139,7 @@ router.get('/servers/:id/bots', asyncRoute(async (req, res) => { const serverId 
 async function notifyServer(serverId: string) { const members = await prisma.serverMember.findMany({ where: { serverId }, select: { userId: true } }); emitUsers(members.map(m => m.userId), 'server:updated', { serverId }); }
 async function validateChannels(db: Prisma.TransactionClient, serverId: string, ids: string[], actorId: string, grants: string[]) {
   if (await db.channel.count({ where: { id: { in: ids }, serverId, archivedAt: null } }) !== new Set(ids).size) throw new HttpError(400, '机器人频道不属于此社区或已归档', 'BOT_CHANNEL_INVALID');
-  for (const channel of await db.channel.findMany({ where: { id: { in: ids }, serverId } })) { const access = await channelPermission(channel.conversationId, actorId, false, db); if (!access || !access.permissions.installBots || (grants.some(g => g === 'SEND_MESSAGES' || g === 'COMMANDS') && !access.permissions.send)) throw new HttpError(403, '机器人没有发言权限', 'BOT_SEND_FORBIDDEN'); }
+  for (const channel of await db.channel.findMany({ where: { id: { in: ids }, serverId } })) { if (channel.readOnly && grants.some(g => g === 'SEND_MESSAGES' || g === 'COMMANDS')) throw new HttpError(403, '机器人不能在只读频道发言，请选择其他频道或仅授权读取', 'BOT_CHANNEL_READONLY'); const access = await channelPermission(channel.conversationId, actorId, false, db); if (!access || !access.permissions.installBots || (grants.some(g => g === 'SEND_MESSAGES' || g === 'COMMANDS') && !access.permissions.send)) throw new HttpError(403, '机器人没有发言权限', 'BOT_SEND_FORBIDDEN'); }
 }
 router.post('/servers/:id/bots', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id), input = validate(z.strictObject({ botId: id, channelIds: z.array(id).min(1).max(50).refine(v => new Set(v).size === v.length), permissions, config: settings.default({}) }), req.body);
@@ -147,6 +148,8 @@ router.post('/servers/:id/bots', asyncRoute(async (req, res) => {
     const bot = await db.bot.findUnique({ where: { id: input.botId } });
     if (bot?.builtin && !input.config.welcome) throw new HttpError(400, '请填写欢迎语', 'BOT_WELCOME_REQUIRED');
     if (!bot) throw new HttpError(404, '机器人不存在', 'BOT_NOT_FOUND');
+    const prior = await db.botInstallation.findUnique({ where: { botId_serverId: { botId: input.botId, serverId } }, select: installationSelect });
+    if (prior) return prior;
     if (await db.botInstallation.count({ where: { serverId } }) >= 20) throw new HttpError(400, '机器人数量已达上限', 'BOT_LIMIT');
     const i = await db.botInstallation.create({ data: { ...input, serverId }, select: installationSelect }); await audit(db, req.user.id, 'INSTALL', i.id); return i;
   }); await notifyServer(serverId); res.status(201).json(installation);

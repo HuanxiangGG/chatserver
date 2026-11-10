@@ -1,3 +1,5 @@
+import guestTickets from './guest-tickets.js';
+import communityControls from './community-controls.js';
 import reports from './reports.js';
 import groupModeration from './group-moderation.js';
 import forwarding from './forwarding.js';
@@ -47,7 +49,7 @@ app.use('/api', (req, _res, next) => {
   if (config.cookieSecure && !req.secure) return next(new HttpError(503, '服务器代理配置错误：未识别 HTTPS，请检查 TRUST_PROXY 和 X-Forwarded-Proto', 'PROXY_HTTPS_REQUIRED'));
   next();
 });
-app.use('/api', auth, bots, communities, tickets, chat, messageSearch, forwarding, groupModeration, reports, uploads, admin, social);
+app.use('/api', guestTickets, communityControls, auth, bots, communities, tickets, chat, messageSearch, forwarding, groupModeration, reports, uploads, admin, social);
 app.use((_req, res) => res.status(404).json({ error: '接口不存在' }));
 const errors: ErrorRequestHandler = (error, _req, res, _next) => {
   if (error instanceof HttpError) { res.status(error.status).json({ error: error.message, code: error.code }); return; }

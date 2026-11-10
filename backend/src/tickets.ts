@@ -10,9 +10,10 @@ const router = Router(); router.use(requireAuth);
 const id = z.string().min(1).max(100), status = z.enum(['OPEN','IN_PROGRESS','CLOSED']);
 async function info(ticket: Prisma.TicketGetPayload<{}>, userId: string) {
   const server = await prisma.server.findUniqueOrThrow({ where: { id: ticket.serverId }, select: { ownerId: true } });
-  const people = await prisma.user.findMany({ where: { id: { in: [ticket.memberId, server.ownerId, ...(ticket.assigneeId ? [ticket.assigneeId] : [])] } }, select: publicUserSelect });
-  const unreadCount = await prisma.message.count({ where: { conversationId: ticket.conversationId, senderId: { not: userId }, retractedAt: null, hidden: { none: { userId } }, reads: { none: { userId, readAt: { not: null } } } } });
-  return { ...ticket, member: people.find(p => p.id === ticket.memberId), owner: people.find(p => p.id === server.ownerId), assignee: people.find(p => p.id === ticket.assigneeId) ?? null, unreadCount };
+  const people = await prisma.user.findMany({ where: { id: { in: [...(ticket.memberId ? [ticket.memberId] : []), server.ownerId, ...(ticket.assigneeId ? [ticket.assigneeId] : [])] } }, select: publicUserSelect });
+  const unreadCount = await prisma.message.count({ where: { conversationId: ticket.conversationId, OR: [{ senderId: { not: userId } }, { senderId: null }], retractedAt: null, hidden: { none: { userId } }, reads: { none: { userId, readAt: { not: null } } } } });
+  const { recoveryHash: _secret, ...safe } = ticket;
+  return { ...safe, member: people.find(p => p.id === ticket.memberId), owner: people.find(p => p.id === server.ownerId), assignee: people.find(p => p.id === ticket.assigneeId) ?? null, unreadCount };
 }
 async function notify(ticketId: string, extra: string[] = []) {
   const t = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
@@ -22,9 +23,9 @@ async function notify(ticketId: string, extra: string[] = []) {
 }
 router.get('/servers/:id/tickets', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id); await serverMember(serverId, req.user.id);
-  const query = validate(z.object({ status: status.optional(), q: z.string().trim().max(100).optional(), cursor: id.optional(), limit: z.coerce.number().int().min(1).max(50).default(30) }), req.query);
+  const query = validate(z.object({ assigned: z.enum(['0','1']).optional(), status: status.optional(), q: z.string().trim().max(100).optional(), cursor: id.optional(), limit: z.coerce.number().int().min(1).max(50).default(30) }), req.query);
   const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
-  const where: Prisma.TicketWhereInput = { serverId, ...(query.status ? { status: query.status } : {}), ...(server.ownerId === req.user.id ? {} : { OR: [{ memberId: req.user.id }, { assigneeId: req.user.id }] }) };
+  const where: Prisma.TicketWhereInput = { serverId, ...(query.status ? { status: query.status } : {}), ...(query.assigned === '1' ? { assigneeId: req.user.id } : server.ownerId === req.user.id ? {} : { OR: [{ memberId: req.user.id }, { assigneeId: req.user.id }] }) };
   if (query.q) {
     const numericQuery = /^#?\d+$/.test(query.q) ? Number(query.q.replace('#', '')) : NaN;
     const numberFilter = Number.isSafeInteger(numericQuery) && numericQuery >= 1 && numericQuery <= 2147483647 ? [{ number: numericQuery }] : [];
@@ -57,6 +58,7 @@ router.post('/servers/:id/tickets', asyncRoute(async (req, res) => {
       if (first?.content !== input.content) throw new HttpError(409, '工单标识已用于其他内容', 'TICKET_CONFLICT');
       return old;
     }
+    if (!server.privateTicketsEnabled) throw new HttpError(403, '私密工单已关闭，不能新建', 'TICKETS_DISABLED');
     const c = await db.conversation.create({ data: { type: 'TICKET', name: input.subject, members: { create: [...new Set([memberId, server.ownerId])].map(userId => ({ userId, role: userId === server.ownerId ? 'OWNER' : 'MEMBER' })) } } });
     const t = await db.ticket.create({ data: { serverId, conversationId: c.id, memberId, creatorId: req.user.id, clientId: input.clientId, subject: input.subject, category: input.category } });
     const m = await db.message.create({ data: { conversationId: c.id, senderId: req.user.id, content: input.content, clientId: `ticket:${t.id}` } });

@@ -124,7 +124,8 @@ model ConversationMember {
 model Message {
   id             String              @id @default(cuid())
   conversationId String
-  senderId       String
+  senderId       String?
+  guestTicketId  String?
   content        String              @default("")
   clientId       String
   forwardedFrom  Json?
@@ -133,7 +134,8 @@ model Message {
   editedAt       DateTime?
   retractedAt    DateTime?
   conversation   Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User                @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  guestTicket    Ticket?             @relation("GuestMessages", fields: [guestTicketId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  sender         User?               @relation(fields: [senderId], references: [id], onDelete: Restrict)
   replyTo        Message?            @relation("Replies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies        Message[]           @relation("Replies")
   attachments    MessageAttachment[]
@@ -141,6 +143,7 @@ model Message {
   hidden         MessageHidden[]
 
   @@unique([senderId, clientId])
+  @@unique([guestTicketId, clientId])
   @@index([conversationId, createdAt, id])
   @@index([conversationId, senderId, createdAt, id])
   @@index([content(ops: raw("gin_trgm_ops"))], type: Gin, map: "Message_content_trgm_idx")
@@ -148,14 +151,16 @@ model Message {
 
 model MessageAttachment {
   id         String   @id @default(cuid())
-  ownerId    String
+  ownerId    String?
+  guestTicketId String?
+  guestTicket Ticket? @relation("GuestAttachments", fields: [guestTicketId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "Attachment_guestTicketId_fkey")
   messageId  String?
   filename   String
   mimeType   String
   size       Int
   storageKey String   @unique
   createdAt  DateTime @default(now())
-  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner      User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   message    Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
 
   @@index([ownerId])
@@ -221,6 +226,8 @@ model Server {
   ownerId     String
   name        String
   description String            @default("")
+  privateTicketsEnabled Boolean @default(true)
+  guestTicketsEnabled Boolean @default(false)
   rules       String            @default("")
   iconUrl     String?
   createdAt   DateTime          @default(now())
@@ -285,6 +292,7 @@ model Channel {
   grants         ChannelGrant[]
   permissionOverrides Json?
   roleOverrides ChannelRoleOverride[]
+  restrictions ChannelRestriction[]
 
   @@index([serverId, archivedAt, position])
 }
@@ -421,7 +429,12 @@ model Ticket {
   number Int @unique @default(autoincrement())
   serverId String
   conversationId String @unique
-  memberId String
+  memberId String?
+  guestName String?
+  recoveryHash String?
+  guestSessions GuestTicketSession[]
+  guestMessages Message[] @relation("GuestMessages")
+  guestAttachments MessageAttachment[] @relation("GuestAttachments")
   creatorId String
   assigneeId String?
   subject String
@@ -477,4 +490,25 @@ model BotEvent {
   createdAt DateTime @default(now())
   installation BotInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
   @@index([installationId, createdAt, id])
+}
+
+model GuestTicketSession {
+  id String @id @default(cuid())
+  ticketId String
+  tokenHash String @unique
+  csrfToken String
+  expiresAt DateTime
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([ticketId, expiresAt])
+}
+model ChannelRestriction {
+  channelId String
+  userId String
+  actorId String
+  reason String
+  until DateTime?
+  createdAt DateTime @default(now())
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@id([channelId, userId])
+  @@index([userId, until])
 }
