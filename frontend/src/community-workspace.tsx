@@ -1,4 +1,4 @@
-import { CopyTicketId } from "./community-controls";
+import { TicketPrivacyChoice, ClaimableTickets } from "./ticket-management";
 import { CommunityDialog } from "./communities";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -11,7 +11,6 @@ import { api, json } from "./api";
 import { translate as tr, useLanguage } from "./i18n";
 import { useApp } from "./state";
 import { Dialog, Empty, ErrorBox, Spinner } from "./ui";
-import { ChatPage } from "./chat";
 import type { CommunityDetail, User } from "./types";
 export interface Ticket {
   id: string;
@@ -24,6 +23,9 @@ export interface Ticket {
   memberId: string | null;
   guestName?: string | null;
   assigneeId: string | null;
+  ownerOnly: boolean;
+  handoffAssigneeId: string | null;
+  handoffAssignee?: User | null;
   member?: User;
   assignee?: User | null;
   unreadCount?: number;
@@ -91,6 +93,8 @@ export function TicketCreate({
               json("POST", {
                 memberId: memberId || form.get("memberId") || undefined,
                 clientId: nonce.current,
+                ownerOnly: form.get("ownerOnly") !== "false",
+                assigneeId: form.get("assigneeId") || undefined,
                 category: form.get("category"),
                 subject: form.get("subject"),
                 content: form.get("content"),
@@ -106,7 +110,31 @@ export function TicketCreate({
           }
         }}
       >
-        <p className="muted">{tr("communityTicketPrivacy")}</p>
+        {community?.ownerId === app.user?.id ? (
+          <p className="muted">{tr("adminProactivePrivacy")}</p>
+        ) : (
+          <TicketPrivacyChoice />
+        )}
+        {community && community.ownerId === app.user?.id && (
+          <label>
+            {tr("adminInitialAssignment")}
+            <select name="assigneeId">
+              <option value="">{tr("adminCommunityOwner")}</option>
+              {community.members
+                .filter(
+                  (m) =>
+                    m.ticketEligible &&
+                    m.userId !== community.ownerId &&
+                    m.userId !== memberId,
+                )
+                .map((m) => (
+                  <option key={m.userId} value={m.userId}>
+                    {m.user.displayName}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
         {community && community.ownerId === app.user?.id && !memberId && (
           <label>
             {tr("communityMembers")}
@@ -225,6 +253,9 @@ export function TicketsPage() {
           </button>
         )}
       </header>
+      {community?.role === "ADMIN" && community.adminTicketClaimEnabled && (
+        <ClaimableTickets serverId={serverId!} />
+      )}
       {community && !community.privateTicketsEnabled && (
         <p className="field-note">{tr("controlsExistingKept")}</p>
       )}
@@ -319,146 +350,7 @@ export function TicketsPage() {
     </section>
   );
 }
-export function TicketChat() {
-  useLanguage();
-  const { serverId, ticketId, id } = useParams(),
-    navigate = useNavigate(),
-    app = useApp(),
-    [ticket, setTicket] = useState<Ticket | null>(null),
-    [server, setServer] = useState<CommunityDetail | null>(null),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [revision, setRevision] = useState(0);
-  useEffect(() => {
-    let live = true;
-    Promise.all([
-      api<Ticket>(`/tickets/${ticketId}`),
-      api<CommunityDetail>(`/servers/${serverId}`),
-    ])
-      .then(([t, s]) => {
-        if (live) {
-          if (t.serverId !== serverId || t.conversationId !== id) {
-            navigate(ticketPath(t), { replace: true });
-            return;
-          }
-          setTicket(t);
-          setServer(s);
-          setError("");
-        }
-      })
-      .catch((e) => {
-        if (live) setError(e.message);
-      });
-    return () => {
-      live = false;
-    };
-  }, [ticketId, serverId, id, app.sync, revision]);
-  const change = async (data: unknown) => {
-    setBusy(true);
-    try {
-      setTicket(await api<Ticket>(`/tickets/${ticketId}`, json("PATCH", data)));
-      setRevision((v) => v + 1);
-      await app.refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  if (!ticket || !server || ticket.id !== ticketId || server.id !== serverId)
-    return error ? (
-      <ErrorBox
-        message={error}
-        retry={() => {
-          setError("");
-          setRevision((v) => v + 1);
-        }}
-      />
-    ) : (
-      <Spinner />
-    );
-  return (
-    <div className="ticket-chat" key={ticket.id}>
-      <div className="ticket-context">
-        <CopyTicketId id={ticket.id} />
-        <Link to={`/servers/${serverId}/tickets`}>
-          {tr(
-            server.ownerId === app.user?.id
-              ? "communityTicketQueue"
-              : "communityTickets",
-          )}
-        </Link>
-        <strong title={ticket.subject}>
-          #{ticket.number} · {ticket.subject}
-        </strong>
-        <span>
-          {statusText(ticket.status)} · {tr("communityHandler")}:{" "}
-          {ticket.assignee?.displayName || tr("communityOwner")}
-        </span>
-        <div>
-          {server.ownerId === app.user?.id && (
-            <label className="ticket-assign">
-              <span className="sr-only">{tr("communityAssign")}</span>
-              <select
-                value={ticket.assigneeId || ""}
-                disabled={busy}
-                onChange={(e) =>
-                  void change({ assigneeId: e.target.value || null })
-                }
-              >
-                <option value="">{tr("communityOwner")}</option>
-                {server.members
-                  .filter(
-                    (m) =>
-                      m.userId !== ticket.memberId &&
-                      m.userId !== server.ownerId &&
-                      m.ticketEligible,
-                  )
-                  .map((m) => (
-                    <option key={m.userId} value={m.userId}>
-                      {m.user.displayName}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          )}
-          {ticket.status === "OPEN" &&
-            (server.ownerId === app.user?.id ||
-              ticket.assigneeId === app.user?.id) && (
-              <button
-                className="btn btn-secondary"
-                disabled={busy}
-                onClick={() => void change({ status: "IN_PROGRESS" })}
-              >
-                {tr("communityTakeTicket")}
-              </button>
-            )}
-          <button
-            className="btn btn-secondary"
-            disabled={busy}
-            onClick={() =>
-              void change({
-                status: ticket.status === "CLOSED" ? "OPEN" : "CLOSED",
-              })
-            }
-          >
-            {tr(
-              ticket.status === "CLOSED"
-                ? "communityReopen"
-                : "communityCloseTicket",
-            )}
-          </button>
-        </div>
-      </div>
-      {error && (
-        <p role="alert" className="form-error ticket-action-error">
-          {error}
-        </p>
-      )}
-      <ChatPage />
-    </div>
-  );
-}
+export { TicketChat } from "./ticket-management";
 interface BotInstall {
   id: string;
   botId: string;

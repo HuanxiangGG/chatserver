@@ -75,7 +75,7 @@ const emojis = [
   "✅",
   "🌊",
 ];
-export function ChatPage() {
+export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;compactHeader?:boolean} = {}) {
   useLanguage();
   const { id } = useParams(),
     app = useApp(),
@@ -560,7 +560,8 @@ export function ChatPage() {
   return (
     <div className="chat-room">
       <div className="chat-primary">
-        <header className="chat-header">
+        <header className={`chat-header ${compactHeader ? "chat-header-compact" : ""}`}>
+          {!compactHeader && <>
           <Link
             className="icon-btn mobile-back"
             to={conversation.ticket ? `/servers/${conversation.ticket.serverId}/tickets` : isChannel ? `/servers/${conversation.channel?.serverId}` : "/chat"}
@@ -580,6 +581,7 @@ export function ChatPage() {
                 : statusText(other)}
             </span>
           </div>
+          </>}
           <div className="chat-header-actions">{isChannel&&<ChannelActions conversation={conversation}/>}<button type="button" className="icon-btn forward-trigger" title={t(selecting ? "forwardCancel" : "forwardSelect")} aria-label={t(selecting ? "forwardCancel" : "forwardSelect")} onClick={() => { setSelecting(!selecting); setForwardIds([]); }}><Forward size={19} /></button><MessageSearch key={conversation.id} conversation={conversation} locate={locateMessage} />
             <button
               className={`icon-btn ${infoOpen ? "selected" : ""}`}
@@ -800,7 +802,7 @@ export function ChatPage() {
             />
             <div className="composer-toolbar composer-actions">
               <button type="button" className={`icon-btn ${emojiOpen ? 'selected' : ''}`} aria-label={tr('uiComposerMore')} aria-expanded={emojiOpen} onClick={() => setEmojiOpen(!emojiOpen)}><MoreHorizontal size={20} /></button>
-              <button type="submit" className="send-button" onPointerDown={e => { if (document.activeElement === composer.current) e.preventDefault(); }} disabled={!writable || (!draft.trim() && !media?.items.length)} aria-label={tr('screen479')}>{sending ? <LoaderCircle size={18} className="spin" /> : <Send size={18} />}</button>
+              <button type="submit" className="send-button" onPointerDown={e => { if (document.activeElement === composer.current) e.preventDefault(); }} disabled={!writable || (!draft.trim() && !media?.items.length)} aria-label={sendLabel || tr('screen479')}>{sendLabel && <span>{sendLabel}</span>}{sending ? <LoaderCircle size={18} className="spin" /> : <Send size={18} />}</button>
             </div>
             {emojiOpen && (
               <div className="emoji-palette" role="group" aria-label={tr('screen480')} onKeyDown={e => { if (e.key === 'Escape') { setEmojiOpen(false); composer.current?.focus({preventScroll:true}); } }}>

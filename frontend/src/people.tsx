@@ -1,3 +1,4 @@
+import { CommunityIdentity } from './member-management';
 import { translate as tr, useLanguage } from './i18n';
 import { ReportButton } from './reports';
 import { useEffect, useRef, useState } from "react";
@@ -433,7 +434,7 @@ export function ProfilePage() {
   const person = profile;
   return (
     <div className="page-scroll">
-      <div className="page-content profile-page">{!own && <ReportButton targetType="USER" targetId={profile.id} />}
+      <div className="page-content profile-page"><CommunityIdentity userId={person.id}/>{!own && <ReportButton targetType="USER" targetId={profile.id} />}
         <Link to="/friends" className="back-link">
           <ArrowLeft size={16} />
           {tr('screen555')}</Link>

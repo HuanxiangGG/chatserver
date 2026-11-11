@@ -101,7 +101,7 @@ export type CommunityPermissions = Record<'view'|'send'|'upload'|'manageMessages
 export interface CommunityRole {id:string;name:string;position:number;permissions:Partial<CommunityPermissions>;members:{userId:string}[]}
 export interface Community {
   id: string; name: string; description: string; ownerId: string; role: ServerRole;
-  privateTicketsEnabled: boolean; guestTicketsEnabled: boolean;
+  privateTicketsEnabled: boolean; guestTicketsEnabled: boolean; adminTicketClaimEnabled: boolean;
   rules?:string; iconUrl?:string|null;
   _count?: { members: number };
 }

@@ -193,6 +193,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     client.on("conversation:updated", update);
     client.on("server:updated", update);
     client.on("ticket:updated", update);
+    client.on("ticket:access-revoked", update);
+    client.on("ticket:queue-changed", update);
     client.on("friend-request:updated", update);
     client.on("friends:updated", update);
     client.on("message:new", () => void refresh().catch(() => {}));

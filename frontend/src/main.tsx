@@ -26,6 +26,7 @@ import { GroupPage } from "./groups";
 import { AdminPage } from "./admin";
 import { Brand, Spinner } from "./ui";
 import "./styles.css";
+import "./ticket-management.css";
 function Guard() {
   useLanguage();
   const { user, loading } = useApp(),

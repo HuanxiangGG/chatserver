@@ -50,14 +50,20 @@ export function TicketSettings({ server }: { server: CommunityDetail }) {
     [values, setValues] = useState({
       privateTicketsEnabled: server.privateTicketsEnabled,
       guestTicketsEnabled: server.guestTicketsEnabled,
+      adminTicketClaimEnabled: server.adminTicketClaimEnabled || false,
     });
   useEffect(
     () =>
       setValues({
         privateTicketsEnabled: server.privateTicketsEnabled,
         guestTicketsEnabled: server.guestTicketsEnabled,
+        adminTicketClaimEnabled: server.adminTicketClaimEnabled || false,
       }),
-    [server.privateTicketsEnabled, server.guestTicketsEnabled],
+    [
+      server.privateTicketsEnabled,
+      server.guestTicketsEnabled,
+      server.adminTicketClaimEnabled,
+    ],
   );
   const change = async (
     privateTicketsEnabled: boolean,
@@ -66,7 +72,7 @@ export function TicketSettings({ server }: { server: CommunityDetail }) {
     setBusy(true);
     setError("");
     const prior = values;
-    setValues({ privateTicketsEnabled, guestTicketsEnabled });
+    setValues({ ...values, privateTicketsEnabled, guestTicketsEnabled });
     try {
       await api(
         `/servers/${server.id}/ticket-settings`,
@@ -125,6 +131,37 @@ export function TicketSettings({ server }: { server: CommunityDetail }) {
         {tr("controlsGuestEnabled")}
       </label>
       <p className="field-note">{tr("controlsGuestExisting")}</p>
+      <label className="check-label">
+        <input
+          type="checkbox"
+          checked={values.adminTicketClaimEnabled}
+          disabled={busy}
+          onChange={async (e) => {
+            const previous = values;
+            const next = {
+              ...values,
+              adminTicketClaimEnabled: e.target.checked,
+            };
+            setValues(next);
+            setBusy(true);
+            setError("");
+            try {
+              await api(
+                `/servers/${server.id}/ticket-settings`,
+                json("PATCH", next),
+              );
+              await app.refresh();
+            } catch (e) {
+              setValues(previous);
+              setError((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+        {tr("adminClaimSetting")}
+      </label>
+      <p className="field-note">{tr("adminClaimSettingNote")}</p>
       {values.privateTicketsEnabled && values.guestTicketsEnabled && (
         <label>
           {tr("controlsGuestLink")}

@@ -1,3 +1,4 @@
+import { TicketPrivacyChoice } from "./ticket-management";
 import {
   useCallback,
   useEffect,
@@ -27,6 +28,10 @@ type GuestTicket = {
   subject: string;
   guestName: string;
   status: string;
+  ownerOnly: boolean;
+  assigneeName?: string;
+  handoffAssigneeId: string | null;
+  handoffName?: string;
 };
 async function guestApi<T>(
   path: string,
@@ -165,6 +170,15 @@ export function GuestTickets() {
             <h1>{session.ticket.subject}</h1>
             <CopyTicketId id={session.ticket.id} />
           </div>
+          <GuestHandoff
+            session={session}
+            onChange={(ticket) => setSession((v) => (v ? { ...v, ticket } : v))}
+          />
+          {session.ticket.assigneeName && (
+            <p className="guest-current-handler">
+              {tr("communityHandler")}: {session.ticket.assigneeName}
+            </p>
+          )}
           {savedCode && (
             <section
               className="guest-recovery"
@@ -266,6 +280,7 @@ export function GuestTickets() {
                       displayName: f.get("displayName"),
                       subject: f.get("subject"),
                       content: f.get("content"),
+                      ownerOnly: f.get("ownerOnly") !== "false",
                     },
                   );
                   setSavedCode(pending.current.recoveryCode);
@@ -295,6 +310,7 @@ export function GuestTickets() {
           >
             {mode === "create" ? (
               <>
+                <TicketPrivacyChoice />
                 <label>
                   {tr("controlsTemporaryName")}
                   <input
@@ -951,6 +967,64 @@ function GuestChat({
             {tr("controlsDownload")}
           </a>
         </Dialog>
+      )}
+    </section>
+  );
+}
+
+function GuestHandoff({
+  session,
+  onChange,
+}: {
+  session: { ticket: GuestTicket; csrfToken: string };
+  onChange: (t: GuestTicket) => void;
+}) {
+  useLanguage();
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const t = session.ticket;
+  if (!t.handoffAssigneeId) return null;
+  return (
+    <section className="ticket-consent-banner">
+      <p>
+        {tr("adminHandoffRequest", { name: t.handoffName || tr("screen236") })}
+      </p>
+      <div className="dialog-actions">
+        {(["APPROVE", "DECLINE"] as const).map((decision) => (
+          <button
+            key={decision}
+            className="btn btn-secondary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                const v = await guestApi<{ ticket: GuestTicket }>(
+                  `/${t.serverId}/tickets/${t.id}/handoff`,
+                  "POST",
+                  { decision, expectedAssigneeId: t.handoffAssigneeId },
+                  session.csrfToken,
+                );
+                onChange(v.ticket);
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {tr(
+              decision === "APPROVE"
+                ? "adminConsentApprove"
+                : "adminConsentDecline",
+            )}
+          </button>
+        ))}
+      </div>
+      {error && (
+        <p role="alert" className="form-error">
+          {error}
+        </p>
       )}
     </section>
   );
