@@ -38,6 +38,26 @@ function deliver(userIds: string[], event: string, payload: unknown) {
   const rooms = [...new Set(userIds)].map(userRoom);
   if (rooms.length) io?.to(rooms).emit(event, payload);
 }
+// Invalidate only the current, unexpired sessions bound to these tickets.
+// Callers handling community mutations invoke this after their transaction commits.
+export async function invalidateGuestTickets(
+  conversationIds: readonly string[],
+) {
+  if (!io || !conversationIds.length) return;
+  const sessions = await prisma.guestTicketSession.findMany({
+    where: {
+      expiresAt: { gt: new Date() },
+      ticket: { conversationId: { in: [...new Set(conversationIds)] } },
+    },
+    select: { id: true, ticket: { select: { conversationId: true } } },
+  });
+  for (const session of sessions)
+    io.of("/guest-tickets")
+      .to(`guest-session:${session.id}`)
+      .emit("ticket:changed", {
+        conversationId: session.ticket.conversationId,
+      });
+}
 export async function deliverConversation(
   userIds: string[],
   event: string,
@@ -75,14 +95,7 @@ export async function deliverConversation(
       "ticket:updated",
     ].includes(event)
   ) {
-    const sessions = await prisma.guestTicketSession.findMany({
-      where: { expiresAt: { gt: new Date() }, ticket: { conversationId } },
-      select: { id: true },
-    });
-    for (const s of sessions)
-      io.of("/guest-tickets")
-        .to(`guest-session:${s.id}`)
-        .emit("ticket:changed", { conversationId });
+    await invalidateGuestTickets([conversationId]);
   }
 }
 export function emitUsers(userIds: string[], event: string, payload: unknown) {

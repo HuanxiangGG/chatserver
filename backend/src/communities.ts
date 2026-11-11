@@ -3,7 +3,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { prisma, requireAuth, validate, HttpError, asyncRoute, publicUserSelect, consumeLimit } from './context.js';
 import { managers, moderators, serverMember, serverPermission, lockServer, syncChannelReaders, channelPermissions, channelPermission, effectiveServerPermissions, resolveServerPermissions, serverCapability, capabilities } from './channel-policy.js';
-import { emitUsers } from './realtime.js';
+import { emitUsers, invalidateGuestTickets } from './realtime.js';
 import { syncTicketReaders } from './ticket-policy.js';
 import { welcomeJoined } from './bots.js';
 import { Prisma } from '@prisma/client';
@@ -23,6 +23,24 @@ async function audit(db: Prisma.TransactionClient, actorId: string, action: stri
 async function notify(serverId: string, extra: string[] = []) {
   const members = await prisma.serverMember.findMany({ where: { serverId }, select: { userId: true } });
   emitUsers([...members.map(m => m.userId), ...extra], 'server:updated', { serverId });
+}
+// Permission mutations already serialize on the community lock. Capture only
+// tickets with a handler/proposal, then notify their guests after commit if a
+// handler actually changed; ordinary joins/messages never use this path.
+async function trackTicketHandlers(serverId: string, change: (db: Prisma.TransactionClient) => Promise<void>) {
+  return prisma.$transaction(async db => {
+    await lockServer(db, serverId);
+    const select = { conversationId: true, assigneeId: true, handoffAssigneeId: true } as const;
+    const where = { serverId, OR: [{ assigneeId: { not: null } }, { handoffAssigneeId: { not: null } }] };
+    const before = await db.ticket.findMany({ where, select });
+    await change(db);
+    if (!before.length) return [];
+    const after = new Map((await db.ticket.findMany({ where, select })).map(t => [t.conversationId, t]));
+    return before.filter(t => {
+      const current = after.get(t.conversationId);
+      return !current || current.assigneeId !== t.assigneeId || current.handoffAssigneeId !== t.handoffAssigneeId;
+    }).map(t => t.conversationId);
+  });
 }
 // Only a name/description/member count is public; private channel metadata is never here.
 router.get('/invites/:token', asyncRoute(async (req, res) => {
@@ -157,8 +175,8 @@ router.post('/invites/:token/join', asyncRoute(async (req, res) => {
 }));
 router.patch('/servers/:id/members/:userId', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id), userId = validate(id, req.params.userId), data = validate(z.object({ role: z.enum(['ADMIN', 'MODERATOR', 'MEMBER']).optional(), muteMinutes: z.number().int().min(0).max(10080).optional() }), req.body);
-  await prisma.$transaction(async db => {
-    await lockServer(db, serverId); const actor = await serverPermission(serverId, req.user.id, moderators, db), target = await serverMember(serverId, userId, db);
+  const changedTickets = await trackTicketHandlers(serverId, async db => {
+    const actor = await serverPermission(serverId, req.user.id, moderators, db), target = await serverMember(serverId, userId, db);
     if (actor.userId === userId || target.role === 'OWNER' || (actor.role !== 'OWNER' && (target.role !== 'MEMBER' || data.role !== undefined))) throw new HttpError(403, '不能修改自己、所有者或更高权限成员');
     await db.serverMember.update({ where: { serverId_userId: { serverId, userId } }, data: { role: data.role, ...(data.muteMinutes !== undefined ? { mutedUntil: data.muteMinutes ? new Date(Date.now() + data.muteMinutes * 60000) : null } : {}) } });
     if (data.role && data.role !== target.role && ['ADMIN','MODERATOR'].includes(target.role)) {
@@ -171,12 +189,12 @@ router.patch('/servers/:id/members/:userId', asyncRoute(async (req, res) => {
     await syncChannelReaders(db, serverId); await syncTicketReaders(db, serverId);
     await db.adminAction.create({ data: { actorId: req.user.id, action: data.role ? (data.role === 'ADMIN' ? 'SERVER_ADMIN_APPOINT' : target.role === 'ADMIN' ? 'SERVER_ADMIN_REVOKE' : 'SERVER_MEMBER_ROLE') : 'SERVER_MEMBER_UPDATE', targetId: userId, reason: '', metadata: { serverId, previousRole: target.role, ...data } } });
   });
-  await notify(serverId); res.json({ ok: true });
+  await invalidateGuestTickets(changedTickets); await notify(serverId); res.json({ ok: true });
 }));
 router.delete('/servers/:id/members/:userId', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id), userId = validate(id, req.params.userId), data = validate(z.object({ ban: z.boolean().default(false), reason: z.string().trim().max(500).default('') }), req.body ?? {});
-  await prisma.$transaction(async db => {
-    await lockServer(db, serverId); const actor = await serverMember(serverId, req.user.id, db), target = await serverMember(serverId, userId, db);
+  const changedTickets = await trackTicketHandlers(serverId, async db => {
+    const actor = await serverMember(serverId, req.user.id, db), target = await serverMember(serverId, userId, db);
     if (target.role === 'OWNER') throw new HttpError(400, '所有者不能退出或被移除');
     if (userId !== req.user.id && (!moderators.includes(actor.role) || (actor.role !== 'OWNER' && target.role !== 'MEMBER'))) throw new HttpError(403, '没有移除此成员的权限');
     if (data.ban && (userId === req.user.id || !managers.includes(actor.role))) throw new HttpError(403, '没有封禁权限');
@@ -188,7 +206,7 @@ router.delete('/servers/:id/members/:userId', asyncRoute(async (req, res) => {
     await syncTicketReaders(db, serverId);
     await syncChannelReaders(db, serverId); await audit(db, req.user.id, data.ban ? 'BAN' : 'LEAVE_OR_KICK', userId, data.reason);
   });
-  await notify(serverId, [userId]); res.json({ ok: true });
+  await invalidateGuestTickets(changedTickets); await notify(serverId, [userId]); res.json({ ok: true });
 }));
 router.delete('/servers/:id/bans/:userId', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id), userId = validate(id, req.params.userId);
@@ -196,14 +214,14 @@ router.delete('/servers/:id/bans/:userId', asyncRoute(async (req, res) => {
 }));
 router.post('/servers/:id/transfer', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id), { userId } = validate(z.object({ userId: id }), req.body);
-  await prisma.$transaction(async db => {
-    await lockServer(db, serverId); const actor = await serverPermission(serverId, req.user.id, ['OWNER'], db);
+  const changedTickets = await trackTicketHandlers(serverId, async db => {
+    const actor = await serverPermission(serverId, req.user.id, ['OWNER'], db);
     await serverMember(serverId, userId, db); if (userId === actor.userId) throw new HttpError(400, '不能转让给自己');
     await db.serverMember.update({ where: { serverId_userId: { serverId, userId: req.user.id } }, data: { role: 'ADMIN' } });
     await db.serverMember.update({ where: { serverId_userId: { serverId, userId } }, data: { role: 'OWNER' } });
     await db.server.update({ where: { id: serverId }, data: { ownerId: userId } });
     await syncChannelReaders(db, serverId); await syncTicketReaders(db, serverId); await audit(db, req.user.id, 'TRANSFER', userId);
-  }); await notify(serverId); res.json({ ok: true });
+  }); await invalidateGuestTickets(changedTickets); await notify(serverId); res.json({ ok: true });
 }));
 router.get('/servers/:id/roles', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id); await serverMember(serverId, req.user.id);
@@ -219,26 +237,26 @@ router.post('/servers/:id/roles', asyncRoute(async (req, res) => {
 }));
 router.patch('/servers/:id/roles/:roleId', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id), roleId = validate(id, req.params.roleId), data = validate(z.object({ name: name.optional(), position: z.number().int().min(1).max(49).optional(), permissions: permissionSchema.optional() }), req.body);
-  await prisma.$transaction(async db => {
-    await lockServer(db, serverId); await serverPermission(serverId, req.user.id, ['OWNER'], db);
+  const changedTickets = await trackTicketHandlers(serverId, async db => {
+    await serverPermission(serverId, req.user.id, ['OWNER'], db);
     if (!await db.serverRole.findFirst({ where: { id: roleId, serverId } })) throw new HttpError(404, '身份组不存在');
     await db.serverRole.update({ where: { id: roleId }, data }); await syncChannelReaders(db, serverId); await syncTicketReaders(db, serverId); await audit(db, req.user.id, 'ROLE_UPDATE', roleId);
-  }); await notify(serverId); res.json({ ok: true });
+  }); await invalidateGuestTickets(changedTickets); await notify(serverId); res.json({ ok: true });
 }));
 router.put('/servers/:id/roles/:roleId/members', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id), roleId = validate(id, req.params.roleId), { userIds } = validate(z.object({ userIds: z.array(id).max(200) }), req.body);
-  await prisma.$transaction(async db => {
-    await lockServer(db, serverId); await serverPermission(serverId, req.user.id, ['OWNER'], db);
+  const changedTickets = await trackTicketHandlers(serverId, async db => {
+    await serverPermission(serverId, req.user.id, ['OWNER'], db);
     if (!await db.serverRole.findFirst({ where: { id: roleId, serverId } })) throw new HttpError(404, '身份组不存在');
     await channelReferences(db, serverId, undefined, userIds);
     if (await db.serverMember.count({ where: { serverId, userId: { in: userIds }, role: { not: 'MEMBER' } } })) throw new HttpError(403, '不能修改自己、所有者或更高权限成员');
     await db.serverRoleMember.deleteMany({ where: { roleId } }); await db.serverRoleMember.createMany({ data: [...new Set(userIds)].map(userId => ({ userId, roleId })) });
     await syncChannelReaders(db, serverId); await syncTicketReaders(db, serverId); await audit(db, req.user.id, 'ROLE_MEMBERS', roleId);
-  }); await notify(serverId); res.json({ ok: true });
+  }); await invalidateGuestTickets(changedTickets); await notify(serverId); res.json({ ok: true });
 }));
 router.delete('/servers/:id/roles/:roleId', asyncRoute(async (req, res) => {
   const serverId = validate(id, req.params.id), roleId = validate(id, req.params.roleId);
-  await prisma.$transaction(async db => { await lockServer(db, serverId); await serverPermission(serverId, req.user.id, ['OWNER'], db); const changed = await db.serverRole.deleteMany({ where: { id: roleId, serverId } }); if (!changed.count) throw new HttpError(404, '身份组不存在'); await syncChannelReaders(db, serverId); await syncTicketReaders(db, serverId); await audit(db, req.user.id, 'ROLE_DELETE', roleId); });
-  await notify(serverId); res.json({ ok: true });
+  const changedTickets = await trackTicketHandlers(serverId, async db => { await serverPermission(serverId, req.user.id, ['OWNER'], db); const changed = await db.serverRole.deleteMany({ where: { id: roleId, serverId } }); if (!changed.count) throw new HttpError(404, '身份组不存在'); await syncChannelReaders(db, serverId); await syncTicketReaders(db, serverId); await audit(db, req.user.id, 'ROLE_DELETE', roleId); });
+  await invalidateGuestTickets(changedTickets); await notify(serverId); res.json({ ok: true });
 }));
 export default router;

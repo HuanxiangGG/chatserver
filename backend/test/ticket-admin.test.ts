@@ -325,7 +325,7 @@ it("assigns a guest ticket, persists replies after refresh, and closes/reopens t
     recoveryCode,
     ownerOnly: true,
   });
-  expect(created.status, JSON.stringify(created.body)).toBe(201);
+  expect(created.status).toBe(201);
   guestTicket = created.body.ticket;
   guestCsrf = created.body.csrfToken;
   guestCookie = created.headers["set-cookie"][0].split(";")[0];
@@ -441,12 +441,10 @@ it("revokes active delivery, search, files and sends even when a custom role sti
     403,
   );
   expect((await send(first, guestTicket, "Revoked denied")).status).toBe(403);
-  const ack = await watcher
-    .timeout(3000)
-    .emitWithAck("typing", {
-      conversationId: guestTicket.conversationId,
-      typing: true,
-    });
+  const ack = await watcher.timeout(3000).emitWithAck("typing", {
+    conversationId: guestTicket.conversationId,
+    typing: true,
+  });
   expect(ack.error).toBeTruthy();
   expect(
     (await send(owner, guestTicket, "Owner continues after revocation")).status,
@@ -480,3 +478,266 @@ it("revokes active delivery, search, files and sends even when a custom role sti
     }),
   ).toBeGreaterThan(0);
 });
+
+it("invalidates the bound online guest after a handler loses the community admin role", async () => {
+  expect((await role(first, "ADMIN")).status).toBe(200);
+  expect(
+    (
+      await call(owner, "patch", `/tickets/${guestTicket.id}`, {
+        requestAssigneeId: first.user.id,
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await guest("post", "/handoff", {
+        decision: "APPROVE",
+        expectedAssigneeId: first.user.id,
+      })
+    ).status,
+  ).toBe(200);
+  const socket = io(`${base}/guest-tickets`, {
+    forceNew: true,
+    autoConnect: false,
+    transports: ["websocket"],
+    reconnection: false,
+    auth: { serverId: a.id, ticketId: guestTicket.id, csrfToken: guestCsrf },
+    extraHeaders: { Origin: origin, Cookie: guestCookie },
+  });
+  sockets.push(socket);
+  const ready = new Promise<void>((resolve, reject) => {
+    socket.once("session:ready", resolve);
+    socket.once("connect_error", reject);
+  });
+  socket.connect();
+  await ready;
+  expect((await guest("get", "")).body.ticket.assigneeId).toBe(first.user.id);
+  // Fence the asynchronous invalidations from the preceding handoff before
+  // observing a role-only change; no message should be sent to make it refresh.
+  const fence = new Promise<void>((resolve) =>
+    socket.once("ticket:changed", () => resolve()),
+  );
+  await realtime.deliverConversation(
+    [],
+    "ticket:updated",
+    { conversationId: guestTicket.conversationId },
+    guestTicket.conversationId,
+  );
+  await fence;
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const changed = new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => {
+      socket.off("ticket:changed", listener);
+      resolve(false);
+    }, 1000);
+    function listener(v: any) {
+      if (v.conversationId === guestTicket.conversationId) {
+        clearTimeout(timeout);
+        socket.off("ticket:changed", listener);
+        resolve(true);
+      }
+    }
+    socket.on("ticket:changed", listener);
+  });
+  expect((await role(first, "MEMBER")).status).toBe(200);
+  expect((await guest("get", "")).body.ticket.assigneeId).toBeNull();
+  expect(await changed).toBe(true);
+  socket.disconnect();
+});
+
+it("refreshes only affected guest tickets after role capability changes, role grants/deletion and member removal", async () => {
+  // Reset the first handler's custom-role assignments from the earlier test.
+  const roles = (await call(owner, "get", `/servers/${a.id}/roles`)).body;
+  for (const r of roles)
+    if (r.members.some((m: any) => m.userId === first.user.id))
+      expect(
+        (
+          await call(owner, "put", `/servers/${a.id}/roles/${r.id}/members`, {
+            userIds: r.members
+              .filter((m: any) => m.userId !== first.user.id)
+              .map((m: any) => m.userId),
+          })
+        ).status,
+      ).toBe(200);
+  const allow = (
+    await call(owner, "post", `/servers/${a.id}/roles`, {
+      name: "Guest support",
+      position: 10,
+      permissions: { handleTickets: true },
+    })
+  ).body;
+  const deny = (
+    await call(owner, "post", `/servers/${a.id}/roles`, {
+      name: "No guest support",
+      position: 40,
+      permissions: { handleTickets: false },
+    })
+  ).body;
+  expect(
+    (
+      await call(owner, "put", `/servers/${a.id}/roles/${allow.id}/members`, {
+        userIds: [first.user.id],
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await call(owner, "patch", `/servers/${b.id}/ticket-settings`, {
+        privateTicketsEnabled: true,
+        guestTicketsEnabled: true,
+      })
+    ).status,
+  ).toBe(200);
+  async function observer(serverId: string) {
+    const created = await call(null, "post", `/guest/${serverId}/tickets`, {
+      clientId: randomUUID(),
+      displayName: "Unrelated guest",
+      subject: "Unrelated private ticket",
+      content: "Do not invalidate this ticket",
+      recoveryCode: randomBytes(32).toString("hex"),
+    });
+    expect(created.status).toBe(201);
+    return openGuest(
+      serverId,
+      created.body.ticket,
+      created.headers["set-cookie"][0].split(";")[0],
+      created.body.csrfToken,
+    );
+  }
+  const primary = await openGuest(a.id, guestTicket, guestCookie, guestCsrf),
+    otherA = await observer(a.id),
+    otherB = await observer(b.id);
+  await fence(primary);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const unrelated: any[] = [];
+  otherA.on("ticket:changed", (v) => unrelated.push(v));
+  otherB.on("ticket:changed", (v) => unrelated.push(v));
+  const attachment = (await guest("get", "/messages")).body.messages
+    .flatMap((m: any) => m.attachments)
+    .find((file: any) => file.filename === "private.png");
+  expect(attachment).toBeTruthy();
+  async function assign() {
+    expect(
+      (
+        await call(owner, "patch", `/tickets/${guestTicket.id}`, {
+          requestAssigneeId: first.user.id,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await guest("post", "/handoff", {
+          decision: "APPROVE",
+          expectedAssigneeId: first.user.id,
+        })
+      ).status,
+    ).toBe(200);
+    await fence(primary);
+  }
+  async function invalidates(action: () => Promise<any>) {
+    const changed = nextChanged(primary);
+    expect((await action()).status).toBe(200);
+    expect(await changed).toEqual({
+      conversationId: guestTicket.conversationId,
+    });
+    expect((await guest("get", "")).body.ticket.assigneeId).toBeNull();
+    expect(
+      (await call(first, "get", `/tickets/${guestTicket.id}`)).status,
+    ).toBe(403);
+    expect((await call(first, "get", `/uploads/${attachment.id}`)).status).toBe(
+      403,
+    );
+    expect(
+      (await send(first, guestTicket, "Denied after capability change")).status,
+    ).toBe(403);
+    expect(unrelated).toEqual([]);
+  }
+  await assign();
+  await invalidates(() =>
+    call(owner, "patch", `/servers/${a.id}/roles/${allow.id}`, {
+      permissions: { handleTickets: false },
+    }),
+  );
+  await call(owner, "patch", `/servers/${a.id}/roles/${allow.id}`, {
+    permissions: { handleTickets: true },
+  });
+  await assign();
+  await invalidates(() =>
+    call(owner, "put", `/servers/${a.id}/roles/${deny.id}/members`, {
+      userIds: [first.user.id],
+    }),
+  );
+  await call(owner, "put", `/servers/${a.id}/roles/${deny.id}/members`, {
+    userIds: [],
+  });
+  await assign();
+  await invalidates(() =>
+    call(owner, "put", `/servers/${a.id}/roles/${allow.id}/members`, {
+      userIds: [],
+    }),
+  );
+  await call(owner, "put", `/servers/${a.id}/roles/${allow.id}/members`, {
+    userIds: [first.user.id],
+  });
+  await assign();
+  await invalidates(() =>
+    call(owner, "delete", `/servers/${a.id}/roles/${allow.id}`),
+  );
+  await role(first, "ADMIN");
+  await assign();
+  await invalidates(() =>
+    call(owner, "delete", `/servers/${a.id}/members/${first.user.id}`),
+  );
+  expect((await call(first, "get", `/servers/${b.id}`)).body.role).toBe(
+    "MEMBER",
+  );
+  for (const socket of [primary, otherA, otherB]) socket.disconnect();
+});
+
+async function openGuest(
+  serverId: string,
+  ticket: any,
+  cookie: string,
+  csrfToken: string,
+) {
+  const socket = io(`${base}/guest-tickets`, {
+    forceNew: true,
+    autoConnect: false,
+    transports: ["websocket"],
+    reconnection: false,
+    auth: { serverId, ticketId: ticket.id, csrfToken },
+    extraHeaders: { Origin: origin, Cookie: cookie },
+  });
+  sockets.push(socket);
+  const ready = new Promise<void>((resolve, reject) => {
+    socket.once("session:ready", resolve);
+    socket.once("connect_error", reject);
+  });
+  socket.connect();
+  await ready;
+  return socket;
+}
+function nextChanged(socket: Socket) {
+  return new Promise<any>((resolve) => {
+    const timer = setTimeout(() => {
+      socket.off("ticket:changed", onChanged);
+      resolve(null);
+    }, 1000);
+    function onChanged(value: any) {
+      clearTimeout(timer);
+      socket.off("ticket:changed", onChanged);
+      resolve(value);
+    }
+    socket.on("ticket:changed", onChanged);
+  });
+}
+async function fence(socket: Socket) {
+  const changed = nextChanged(socket);
+  await realtime.deliverConversation(
+    [],
+    "ticket:updated",
+    { conversationId: guestTicket.conversationId },
+    guestTicket.conversationId,
+  );
+  expect(await changed).toEqual({ conversationId: guestTicket.conversationId });
+}
