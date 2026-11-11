@@ -21,9 +21,18 @@ async function shutdown() {
   const force = setTimeout(() => process.exit(1), 8000);
   force.unref();
   const closed = new Promise<void>(resolve => server.close(() => resolve()));
-  await closeRealtime();
+  try {
+    await closeRealtime();
+  } catch {
+    console.error('Realtime shutdown incomplete');
+    process.exitCode = 1;
+  }
   await closed;
-  await Promise.allSettled([prisma.$disconnect(), redis.quit()]);
+  const released = await Promise.allSettled([prisma.$disconnect(), redis.quit()]);
+  if (released.some(result => result.status === 'rejected')) {
+    console.error('Shutdown resource cleanup failed');
+    process.exitCode = 1;
+  }
   clearTimeout(force);
 }
 process.on('SIGTERM', shutdown);

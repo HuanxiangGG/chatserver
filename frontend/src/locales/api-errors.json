@@ -147,5 +147,6 @@
   "工单已被认领或状态已改变，请刷新队列": "adminClaimConflictError",
   "请先征得工单当事人同意再转交": "adminConsentRequiredError",
   "没有待确认的转交请求": "adminConsentStaleError",
-  "只有工单当事人可以确认转交": "adminConsentParticipantError"
+  "只有工单当事人可以确认转交": "adminConsentParticipantError",
+  "连接正在关闭": "adminRealtimeClosing"
 }

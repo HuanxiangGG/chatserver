@@ -42,7 +42,8 @@
     "adminConsentStaleError": "转交请求已改变，请刷新工单后重试。",
     "adminConsentParticipantError": "只有工单当事人可以同意或拒绝转交。",
     "adminSettingsSections": "社区设置分区",
-    "adminRevokeModerator": "撤销版主"
+    "adminRevokeModerator": "撤销版主",
+    "adminRealtimeClosing": "连接正在关闭，请稍后重试。"
   },
   "en": {
     "adminCommunityOwner": "Community owner",
@@ -87,6 +88,7 @@
     "adminConsentStaleError": "The handoff request has changed. Refresh the ticket and try again.",
     "adminConsentParticipantError": "Only the ticket participant can approve or decline a handoff.",
     "adminSettingsSections": "Community settings sections",
-    "adminRevokeModerator": "Remove moderator role"
+    "adminRevokeModerator": "Remove moderator role",
+    "adminRealtimeClosing": "The connection is closing. Try again shortly."
   }
 }
