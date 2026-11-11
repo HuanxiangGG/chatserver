@@ -486,6 +486,15 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
             await call(`/servers/${f.a.id}/tickets`, "GET", undefined, f.owner)
           ).tickets.some((t) => t.id === ticketId),
         );
+        // Preserve the existing moderator role lifecycle alongside admin controls.
+        await call(`/servers/${f.a.id}/members/${f.second.user.id}`,"PATCH",{role:"MODERATOR"},f.owner);
+        await op.locator('.community-member').filter({has:op.locator(`a[href="/profile/${f.second.user.id}"]`)}).filter({hasText:'Moderator'}).waitFor();
+        const moderatorMenu=await memberMenu(op,f.second);
+        await moderatorMenu.getByRole('button',{name:dictionary.en.adminRevokeModerator,exact:true}).click();
+        await moderatorMenu.getByRole('button',{name:dictionary.en.adminConfirm,exact:true}).click();
+        await moderatorMenu.waitFor({state:'detached'});
+        const updatedCommunity=await call(`/servers/${f.a.id}`,"GET",undefined,f.owner);
+        assert.equal(updatedCommunity.members.find(m=>m.userId===f.second.user.id).role,'MEMBER');
         for (const c of contexts) {
           assert.deepEqual(c.errors, []);
           assert.deepEqual(

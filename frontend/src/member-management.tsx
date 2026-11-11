@@ -112,6 +112,15 @@ export function MemberActions({
                       member.role === "ADMIN" ? "adminRevoke" : "adminAppoint",
                     )}
                   </button>
+                  {member.role === "MODERATOR" && (
+                    <button
+                      className="btn btn-secondary"
+                      disabled={busy}
+                      onClick={() => setConfirm("MEMBER")}
+                    >
+                      {tr("adminRevokeModerator")}
+                    </button>
+                  )}
                   {member.role === "MEMBER" && (
                     <button
                       className="btn btn-secondary"

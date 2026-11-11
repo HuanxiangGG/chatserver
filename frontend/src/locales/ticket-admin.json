@@ -41,7 +41,8 @@
     "adminConsentRequiredError": "请先请求当事人同意转交，再指派新的处理人。",
     "adminConsentStaleError": "转交请求已改变，请刷新工单后重试。",
     "adminConsentParticipantError": "只有工单当事人可以同意或拒绝转交。",
-    "adminSettingsSections": "社区设置分区"
+    "adminSettingsSections": "社区设置分区",
+    "adminRevokeModerator": "撤销版主"
   },
   "en": {
     "adminCommunityOwner": "Community owner",
@@ -85,6 +86,7 @@
     "adminConsentRequiredError": "Request the participant’s consent before assigning a new handler.",
     "adminConsentStaleError": "The handoff request has changed. Refresh the ticket and try again.",
     "adminConsentParticipantError": "Only the ticket participant can approve or decline a handoff.",
-    "adminSettingsSections": "Community settings sections"
+    "adminSettingsSections": "Community settings sections",
+    "adminRevokeModerator": "Remove moderator role"
   }
 }
