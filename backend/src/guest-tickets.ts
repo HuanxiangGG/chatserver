@@ -19,6 +19,8 @@ import {
 } from "./guest-access.js";
 import { lockServer } from "./channel-policy.js";
 import { messageInclude, serializeMessage } from "./chat.js";
+import { decideTicketHandoff } from "./ticket-workflow.js";
+import { notifyTicket } from "./tickets.js";
 import { emitUsers } from "./realtime.js";
 import { upload, storeUpload, sendAttachment } from "./attachment-storage.js";
 const router = Router(),
@@ -50,6 +52,10 @@ const safeTicket = (t: {
   status: string;
   serverId: string;
   conversationId: string;
+  assigneeId: string | null;
+  ownerOnly: boolean;
+  handoffAssigneeId: string | null;
+  handoffRequestedAt: Date | null;
 }) => ({
   id: t.id,
   number: t.number,
@@ -58,7 +64,28 @@ const safeTicket = (t: {
   status: t.status,
   serverId: t.serverId,
   conversationId: t.conversationId,
+  assigneeId: t.assigneeId,
+  ownerOnly: t.ownerOnly,
+  handoffAssigneeId: t.handoffAssigneeId,
+  handoffRequestedAt: t.handoffRequestedAt,
 });
+async function guestTicketInfo(t: Parameters<typeof safeTicket>[0]) {
+  const people = await prisma.user.findMany({
+    where: {
+      id: {
+        in: [t.assigneeId, t.handoffAssigneeId].filter(
+          (id): id is string => !!id,
+        ),
+      },
+    },
+    select: { id: true, displayName: true },
+  });
+  return {
+    ...safeTicket(t),
+    assigneeName: people.find((p) => p.id === t.assigneeId)?.displayName,
+    handoffName: people.find((p) => p.id === t.handoffAssigneeId)?.displayName,
+  };
+}
 async function notify(conversationId: string, message?: unknown) {
   const users = await prisma.conversationMember.findMany({
     where: { conversationId },
@@ -112,6 +139,7 @@ router.post(
           subject: z.string().trim().min(1).max(120),
           content: z.string().trim().min(1).max(4000),
           recoveryCode: secret,
+          ownerOnly: z.boolean().default(true),
         }),
         req.body,
       );
@@ -141,6 +169,7 @@ router.post(
         if (
           old.subject !== input.subject ||
           old.guestName !== input.displayName ||
+          old.ownerOnly !== input.ownerOnly ||
           first?.content !== input.content
         )
           throw new HttpError(409, "工单标识已用于其他内容", "TICKET_CONFLICT");
@@ -169,6 +198,7 @@ router.post(
           clientId: input.clientId,
           subject: input.subject,
           category: "GUEST",
+          ownerOnly: input.ownerOnly,
         },
       });
       await db.message.create({
@@ -182,7 +212,7 @@ router.post(
       return t;
     });
     const csrfToken = await session(res, ticket.id);
-    await notify(ticket.conversationId);
+    await notifyTicket(ticket.id);
     res.status(201).json({ ticket: safeTicket(ticket), csrfToken });
   }),
 );
@@ -210,7 +240,48 @@ router.get(
   asyncRoute(async (req, res) => {
     await consumeLimit(`guest-query:${req.ip}`, 240, 60);
     const s = await guestRequest(req);
-    res.json({ ticket: safeTicket(s.ticket), csrfToken: s.csrfToken });
+    res.json({
+      ticket: await guestTicketInfo(s.ticket),
+      csrfToken: s.csrfToken,
+    });
+  }),
+);
+router.post(
+  "/guest/:serverId/tickets/:ticketId/handoff",
+  asyncRoute(async (req, res) => {
+    const session = await guestRequest(req),
+      input = validate(
+        z.strictObject({
+          decision: z.enum(["APPROVE", "DECLINE"]),
+          expectedAssigneeId: z.string().min(1).max(100),
+        }),
+        req.body,
+      );
+    const prior = (
+      await prisma.conversationMember.findMany({
+        where: { conversationId: session.ticket.conversationId },
+        select: { userId: true },
+      })
+    ).map((m) => m.userId);
+    const ticket = await prisma.$transaction(async (db) => {
+      await lockServer(db, session.ticket.serverId);
+      await guestRequest(req);
+      const t = await decideTicketHandoff(
+        db,
+        session.ticketId,
+        input.decision === "APPROVE",
+        input.expectedAssigneeId,
+        { guestSessionId: session.id },
+      );
+      const { syncTicketReaders } = await import("./ticket-policy.js");
+      await syncTicketReaders(db, t.serverId);
+      return t;
+    });
+    await notifyTicket(ticket.id, prior);
+    res.json({
+      ticket: await guestTicketInfo(ticket),
+      csrfToken: session.csrfToken,
+    });
   }),
 );
 router.get(

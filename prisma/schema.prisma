@@ -228,6 +228,7 @@ model Server {
   description String            @default("")
   privateTicketsEnabled Boolean @default(true)
   guestTicketsEnabled Boolean @default(false)
+  adminTicketClaimEnabled Boolean @default(false)
   rules       String            @default("")
   iconUrl     String?
   createdAt   DateTime          @default(now())
@@ -437,6 +438,10 @@ model Ticket {
   guestAttachments MessageAttachment[] @relation("GuestAttachments")
   creatorId String
   assigneeId String?
+  ownerOnly Boolean @default(true)
+  handoffAssigneeId String?
+  handoffRequestedAt DateTime?
+  consents TicketHandoffConsent[]
   subject String
   category String
   status String @default("OPEN")
@@ -447,7 +452,19 @@ model Ticket {
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
   @@unique([creatorId, clientId])
   @@index([serverId, status, createdAt])
+  @@index([serverId, ownerOnly, status, assigneeId, createdAt], map: "Ticket_claim_queue_idx")
   @@index([memberId, createdAt])
+}
+model TicketHandoffConsent {
+  id String @id @default(cuid())
+  ticketId String
+  assigneeId String
+  userId String?
+  guestSessionId String?
+  approved Boolean
+  createdAt DateTime @default(now())
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@index([ticketId, createdAt])
 }
 model Bot {
   id String @id @default(cuid())

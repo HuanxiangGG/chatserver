@@ -182,7 +182,8 @@ it('custom roles grant scoped channel capabilities without role escalation or cr
   expect((await api(extra).patch(`/servers/${community}/channels/${room.body.id}`, { name: '覆盖管理拒绝' })).status).toBe(403);
   expect((await api(extra).delete(`/servers/${community}/channels/${room.body.id}`)).status).toBe(403);
   const assignedTicket = await api(owner).post(`/servers/${community}/tickets`, { memberId: moderator.user.id, subject: '角色撤销验证', category: '支持', content: '处理权限即时撤销', clientId: randomUUID() }); expect(assignedTicket.status).toBe(201);
-  expect((await api(owner).patch(`/tickets/${assignedTicket.body.id}`, { assigneeId: extra.user.id })).status).toBe(200);
+  expect((await api(owner).patch(`/tickets/${assignedTicket.body.id}`, { requestAssigneeId: extra.user.id })).status).toBe(200);
+  expect((await api(moderator).patch(`/tickets/${assignedTicket.body.id}`, { handoffConsent: 'APPROVE', expectedAssigneeId: extra.user.id })).status).toBe(200);
   expect((await api(extra).get(`/tickets/${assignedTicket.body.id}`)).status).toBe(200);
   expect((await api(owner).patch(`/servers/${community}/roles/${role.body.id}`, { permissions: { view: false, send: false, upload: false, manageChannels: true } })).status).toBe(200);
   expect((await api(extra).get(`/tickets/${assignedTicket.body.id}`)).status).toBe(403);
@@ -228,7 +229,8 @@ it('uses one handler policy for promoted moderators, assignment and immediate re
   expect((await api(extra).patch(`/tickets/${ticket.body.id}`, { assigneeId: moderator.user.id })).status).toBe(403);
   expect((await api(extra).patch(`/servers/${community}/roles/${role.body.id}`, { permissions: { handleTickets: true } })).status).toBe(200);
   expect((await api(extra).get(`/servers/${community}`)).body.members.find((m: any) => m.userId === moderator.user.id).ticketEligible).toBe(true);
-  expect((await api(extra).patch(`/tickets/${ticket.body.id}`, { assigneeId: moderator.user.id })).status).toBe(200);
+  expect((await api(extra).patch(`/tickets/${ticket.body.id}`, { requestAssigneeId: moderator.user.id })).status).toBe(200);
+  expect((await api(owner).patch(`/tickets/${ticket.body.id}`, { handoffConsent: 'APPROVE', expectedAssigneeId: moderator.user.id })).status).toBe(200);
   expect((await api(moderator).get(`/tickets/${ticket.body.id}`)).status).toBe(200);
   const watcher = await connect(moderator), leaked: any[] = []; watcher.on('message:new', value => leaked.push(value));
   expect((await api(extra).patch(`/servers/${community}/roles/${role.body.id}`, { permissions: { handleTickets: false } })).status).toBe(200);

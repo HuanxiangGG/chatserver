@@ -52,7 +52,7 @@ it('isolates same-name halls, private channels and read-only announcements acros
 });
 it('creates one private two-way ticket under duplicate submissions and leaks no title/events/unread to B',async()=>{
  const watcher=await connect(b),leaked:any[]=[];watcher.on('ticket:updated',e=>leaked.push(e));watcher.on('message:new',e=>leaked.push(e));
- const data={clientId:randomUUID(),subject:'私密问题',category:'账号',content:'TICKET_SECRET_ONLY_A'};
+ const data={ownerOnly:false,clientId:randomUUID(),subject:'私密问题',category:'账号',content:'TICKET_SECRET_ONLY_A'};
  const [one,two]=await Promise.all([api(a).post(`/servers/${s1}/tickets`,data),api(a).post(`/servers/${s1}/tickets`,data)]);expect(one.status).toBe(201);expect(two.status).toBe(201);expect(one.body.id).toBe(two.body.id);ticket=one.body;expect(ticket.number).toBeGreaterThan(0);
  expect(await prisma.message.count({where:{conversationId:ticket.conversationId}})).toBe(1);
  expect((await api(b).get(`/servers/${s1}/tickets`)).body.tickets).toEqual([]);

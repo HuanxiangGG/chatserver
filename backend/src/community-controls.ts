@@ -44,6 +44,7 @@ router.patch(
         z.strictObject({
           privateTicketsEnabled: z.boolean(),
           guestTicketsEnabled: z.boolean(),
+          adminTicketClaimEnabled: z.boolean().optional(),
         }),
         req.body,
       );

@@ -161,7 +161,15 @@ router.patch('/servers/:id/members/:userId', asyncRoute(async (req, res) => {
     await lockServer(db, serverId); const actor = await serverPermission(serverId, req.user.id, moderators, db), target = await serverMember(serverId, userId, db);
     if (actor.userId === userId || target.role === 'OWNER' || (actor.role !== 'OWNER' && (target.role !== 'MEMBER' || data.role !== undefined))) throw new HttpError(403, '不能修改自己、所有者或更高权限成员');
     await db.serverMember.update({ where: { serverId_userId: { serverId, userId } }, data: { role: data.role, ...(data.muteMinutes !== undefined ? { mutedUntil: data.muteMinutes ? new Date(Date.now() + data.muteMinutes * 60000) : null } : {}) } });
-    await syncChannelReaders(db, serverId); await syncTicketReaders(db, serverId); await audit(db, req.user.id, 'MEMBER_UPDATE', userId);
+    if (data.role && data.role !== target.role && ['ADMIN','MODERATOR'].includes(target.role)) {
+      // Revoking the community office also revokes its existing assignments,
+      // even if a separate custom role still grants ticket capabilities.
+      await db.ticket.updateMany({ where: { serverId, assigneeId: userId, status: { not: 'CLOSED' } }, data: { assigneeId: null, status: 'OPEN' } });
+      await db.ticket.updateMany({ where: { serverId, assigneeId: userId, status: 'CLOSED' }, data: { assigneeId: null } });
+      await db.ticket.updateMany({ where: { serverId, handoffAssigneeId: userId }, data: { handoffAssigneeId: null, handoffRequestedAt: null } });
+    }
+    await syncChannelReaders(db, serverId); await syncTicketReaders(db, serverId);
+    await db.adminAction.create({ data: { actorId: req.user.id, action: data.role ? (data.role === 'ADMIN' ? 'SERVER_ADMIN_APPOINT' : target.role === 'ADMIN' ? 'SERVER_ADMIN_REVOKE' : 'SERVER_MEMBER_ROLE') : 'SERVER_MEMBER_UPDATE', targetId: userId, reason: '', metadata: { serverId, previousRole: target.role, ...data } } });
   });
   await notify(serverId); res.json({ ok: true });
 }));
