@@ -64,6 +64,11 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379/13
           BROWSER_TEST_SCRIPT: scripts/test-community-controls-browser.mjs
+      - name: Community admin appointment, guest handoff and private claim acceptance
+        run: npm run test:browser:ci
+        env:
+          REDIS_URL: redis://localhost:6379/14
+          BROWSER_TEST_SCRIPT: scripts/test-ticket-admin-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

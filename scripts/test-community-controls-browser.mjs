@@ -221,7 +221,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
         // The link is optimistic UI. Wait for the actual save + refresh before
         // replacing the document, rather than cancelling its pending reads.
         await op.waitForFunction(() => {
-          const inputs = [...document.querySelectorAll('#ticket-settings input[type=checkbox]')];
+          const inputs = [...document.querySelectorAll('#ticket-settings input[type=checkbox]')].slice(0,2);
           return inputs.length === 2 && inputs.every(input => input.checked && !input.disabled);
         });
         await op.waitForLoadState("networkidle");
@@ -490,7 +490,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
         await op.screenshot({
           path: new URL(`${engine}-${width}-owner-ticket.png`, output).pathname,
         });
-        await op.locator(".ticket-context>a").click();
+        await op.locator(".ticket-toolbar-top>a").click();
         await op.locator(".ticket-queue h1").waitFor();
         await op.locator(".ticket-row").first().waitFor();
         await op.locator(".ticket-queue header button").waitFor();

@@ -7,9 +7,9 @@ const base = new URL(process.env.BACKUP_CI_URL || 'http://127.0.0.1:8080');
 assert(process.env.GITHUB_ACTIONS === 'true' && /^\/home\/runner\//.test(process.env.RUNNER_TEMP || ''), 'Backup fixture is GitHub CI-only');
 assert(base.protocol === 'http:' && ['localhost','127.0.0.1'].includes(base.hostname) && base.port === '8080' && base.pathname === '/' && !base.username && !base.password && !base.search && !base.hash, 'Backup fixture only permits the local CI Compose HTTP endpoint');
 const mode = process.argv[2], origin = process.env.APP_ORIGIN;
-const tables = ['User','Conversation','ConversationMember','Message','MessageAttachment','MessageRead','GroupAnnouncement','Report','Server','ServerMember','ServerBan','ServerInvite','ChannelCategory','Channel','ChannelGrant','ServerRole','ServerRoleMember','ChannelRoleOverride','Ticket','Bot','BotInstallation','BotWelcome','BotEvent','AdminAction','GuestTicketSession','ChannelRestriction'];
-const required = ['User','Conversation','ConversationMember','Message','MessageAttachment','MessageRead','Server','ServerMember','ServerInvite','ChannelCategory','Channel','ChannelGrant','ServerRole','ServerRoleMember','ChannelRoleOverride','Ticket','Bot','BotInstallation','BotWelcome','BotEvent','AdminAction','GuestTicketSession','ChannelRestriction'];
-const fixtureKeys = ['fixture:server','fixture:channels','fixture:roles','fixture:role-members','fixture:tickets','fixture:ticket-history','fixture:channel-history','fixture:attachment','fixture:bots','fixture:installations','fixture:welcomes','fixture:events','fixture:guest-sessions','fixture:restrictions'];
+const tables = ['User','Conversation','ConversationMember','Message','MessageAttachment','MessageRead','GroupAnnouncement','Report','Server','ServerMember','ServerBan','ServerInvite','ChannelCategory','Channel','ChannelGrant','ServerRole','ServerRoleMember','ChannelRoleOverride','Ticket','Bot','BotInstallation','BotWelcome','BotEvent','AdminAction','GuestTicketSession','ChannelRestriction','TicketHandoffConsent'];
+const required = ['User','Conversation','ConversationMember','Message','MessageAttachment','MessageRead','Server','ServerMember','ServerInvite','ChannelCategory','Channel','ChannelGrant','ServerRole','ServerRoleMember','ChannelRoleOverride','Ticket','Bot','BotInstallation','BotWelcome','BotEvent','AdminAction','GuestTicketSession','ChannelRestriction','TicketHandoffConsent'];
+const fixtureKeys = ['fixture:server','fixture:channels','fixture:roles','fixture:role-members','fixture:tickets','fixture:ticket-history','fixture:channel-history','fixture:attachment','fixture:bots','fixture:installations','fixture:welcomes','fixture:events','fixture:guest-sessions','fixture:restrictions','fixture:handoff-consent'];
 async function call(path, method = 'GET', body, person) {
  const label=path.replace(/\/invites\/[a-f0-9]{64}/g,'/invites/<redacted>').split('?')[0];
  let response;
@@ -51,7 +51,8 @@ if(mode==='seed') {
   const form=new FormData();form.append('file',new Blob([png],{type:'image/png'}),'ci-ticket.png');
   const upload=await call(`/uploads?conversationId=${ticket.conversationId}`,'POST',form,member);
   const message=await call(`/conversations/${ticket.conversationId}/messages`,'POST',{content:'CI ticket attachment',attachmentIds:[upload.id],clientId:randomUUID()},member);
-  await call(`/tickets/${ticket.id}`,'PATCH',{assigneeId:handler.user.id},owner);
+  await call(`/tickets/${ticket.id}`,'PATCH',{requestAssigneeId:handler.user.id},owner);
+  await call(`/tickets/${ticket.id}`,'PATCH',{handoffConsent:'APPROVE',expectedAssigneeId:handler.user.id},member);
   await call(`/conversations/${ticket.conversationId}/messages`,'POST',{content:'CI owner reply',replyToId:message.id,clientId:randomUUID()},owner);
   await call(`/conversations/${ticket.conversationId}/read`,'POST',{messageId:message.id},handler);
   const proactive=await call(`/servers/${server.id}/tickets`,'POST',{memberId:member.user.id,subject:'CI owner ticket',category:'support',content:'CI proactive history',clientId:randomUUID()},owner);
@@ -75,6 +76,7 @@ if(mode==='seed') {
   ['role-members','ServerRoleMember',`"roleId"=${quote(data.roleId)}`],
   ['guest-sessions','GuestTicketSession',`"ticketId" IN (${ids(data.ticketIds)})`],
   ['restrictions','ChannelRestriction',`"channelId" IN (${ids(data.channelIds)})`],
+  ['handoff-consent','TicketHandoffConsent',`"ticketId" IN (${ids(data.ticketIds)})`],
   ['tickets','Ticket',`"id" IN (${ids(data.ticketIds)})`],
   ['ticket-history','Message',`"conversationId" IN (${ids(data.conversationIds)})`],
   ['channel-history','Message',`"conversationId" IN (${ids(data.channelConversationIds)})`],
