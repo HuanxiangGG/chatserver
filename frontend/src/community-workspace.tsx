@@ -239,12 +239,9 @@ export function TicketsPage() {
       <header>
         <h1>
           {tr(
-            app.communities.find((s) => s.id === serverId)?.ownerId ===
-              app.user?.id
+            community?.role === "OWNER" || community?.role === "ADMIN"
               ? "communityTicketQueue"
-              : assigned
-                ? "controlsAssignedToMe"
-                : "communityTickets",
+              : "communityTickets",
           )}
         </h1>
         {community?.privateTicketsEnabled && (
@@ -253,12 +250,32 @@ export function TicketsPage() {
           </button>
         )}
       </header>
-      {community?.role === "ADMIN" && community.adminTicketClaimEnabled && (
-        <ClaimableTickets serverId={serverId!} />
-      )}
       {community && !community.privateTicketsEnabled && (
         <p className="field-note">{tr("controlsExistingKept")}</p>
       )}
+      {community &&
+        community.role !== "OWNER" &&
+        community.permissions.handleTickets && (
+          <nav
+            className="ticket-scope-filter"
+            aria-label={tr("controlsFilterTickets")}
+          >
+            <Link
+              className="btn btn-secondary"
+              to={`/servers/${serverId}/tickets?assigned=0`}
+              aria-current={!assigned ? "page" : undefined}
+            >
+              {tr("communityAll")}
+            </Link>
+            <Link
+              className="btn btn-secondary"
+              to={`/servers/${serverId}/tickets?assigned=1`}
+              aria-current={assigned ? "page" : undefined}
+            >
+              {tr("controlsAssignedToMe")}
+            </Link>
+          </nav>
+        )}
       <details
         className="ticket-filters"
         open={typeof window !== "undefined" && window.innerWidth >= 640}
@@ -286,6 +303,11 @@ export function TicketsPage() {
           </label>
         </div>
       </details>
+      {!assigned &&
+        community?.role === "ADMIN" &&
+        community.adminTicketClaimEnabled && (
+          <ClaimableTickets serverId={serverId!} />
+        )}
 
       {error ? (
         <ErrorBox message={error} retry={() => setRetry((v) => v + 1)} />

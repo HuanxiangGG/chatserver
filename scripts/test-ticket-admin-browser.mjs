@@ -37,7 +37,8 @@ async function call(path, method = "GET", body, person) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-  assert(r.ok, `${method} ${path}: HTTP ${r.status}`);
+  const label = path.replace(/\/invites\/[a-f0-9]{64}/g, "/invites/<redacted>").split("?")[0];
+  assert(r.ok, `${method} ${label}: HTTP ${r.status}`);
   const data = await r.json();
   return {
     ...data,
@@ -155,6 +156,78 @@ async function snapshot(page, name) {
   );
   await page.screenshot({ path: new URL(`${name}.png`, output).pathname });
 }
+async function checkQueue(
+  page,
+  language,
+  ownTicketId,
+  screenshotName,
+  assignedTicketId,
+) {
+  const title = language === "en" ? "Ticket queue" : "工单队列";
+  await page
+    .locator(".ticket-queue header")
+    .getByRole("heading", { name: title, exact: true })
+    .waitFor();
+  assert.equal(
+    await page.locator(".ticket-queue header h1").textContent(),
+    title,
+  );
+  const scope = page.locator(".ticket-scope-filter");
+  const all = scope.getByRole("link", {
+    name: language === "en" ? "All" : "全部",
+    exact: true,
+  });
+  const assigned = scope.getByRole("link", {
+    name: language === "en" ? "Assigned to me" : "分配给我",
+    exact: true,
+  });
+  await all.click();
+  await page.locator(`.ticket-row[href*="/tickets/${ownTicketId}/"]`).waitFor();
+  await page.locator(".claimable-tickets").waitFor();
+  assert.equal(await all.getAttribute("aria-current"), "page");
+  assert(
+    await page.locator(".ticket-filters").evaluate((filters) => {
+      const claims = document.querySelector(".claimable-tickets");
+      return (
+        !!claims &&
+        !!(
+          filters.compareDocumentPosition(claims) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        )
+      );
+    }),
+    "Search/status filters must precede the claim queue",
+  );
+  await snapshot(page, screenshotName);
+  const assignedResponse = page.waitForResponse(
+    (r) =>
+      r.url().includes("/tickets?assigned=1&") &&
+      r.request().method() === "GET" &&
+      r.status() === 200,
+  );
+  await assigned.click();
+  await page.waitForURL("**/tickets?assigned=1");
+  await assignedResponse;
+  await page
+    .locator(".ticket-queue > .ticket-list,.ticket-queue > .empty")
+    .first()
+    .waitFor();
+  assert.equal(await assigned.getAttribute("aria-current"), "page");
+  assert.equal(await page.locator(".claimable-tickets").count(), 0);
+  assert.equal(
+    await page.locator(`.ticket-row[href*="/tickets/${ownTicketId}/"]`).count(),
+    0,
+    "My participant-only ticket must not appear in Assigned to me",
+  );
+  if (assignedTicketId)
+    await page
+      .locator(`.ticket-row[href*="/tickets/${assignedTicketId}/"]`)
+      .waitFor();
+  await snapshot(page, `${screenshotName}-assigned`);
+  await all.click();
+  await page.locator(`.ticket-row[href*="/tickets/${ownTicketId}/"]`).waitFor();
+  await page.locator(".claimable-tickets").waitFor();
+}
 const results = [];
 for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
   ([k]) => !process.env.REVIEW_ENGINE || k === process.env.REVIEW_ENGINE,
@@ -217,8 +290,26 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
         await op
           .getByLabel(dictionary["zh-CN"].adminClaimSetting, { exact: true })
           .check();
-        await visit(ap, `/servers/${f.a.id}/tickets?assigned=1`);
+        const ownTicket = await call(
+          `/servers/${f.a.id}/tickets`,
+          "POST",
+          {
+            clientId: randomUUID(),
+            ownerOnly: true,
+            subject: "Administrator as participant",
+            category: "Support",
+            content: "My own ticket remains accessible from All",
+          },
+          f.first,
+        );
+        await visit(ap, `/servers/${f.a.id}/tickets?assigned=0`);
         await ap.locator(".claimable-tickets").waitFor();
+        await checkQueue(
+          ap,
+          "zh-CN",
+          ownTicket.id,
+          `${engine}-${width}-queue-zh`,
+        );
         await visit(gp, `/guest/${f.a.id}`);
         await gp.getByRole("button", { name: "新建工单", exact: true }).click();
         await gp.locator("[name=displayName]").fill("临时朋友");
@@ -242,7 +333,10 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
         );
         await visit(op, `/servers/${f.a.id}/tickets`);
         await op.locator(".ticket-queue header > .btn-primary").waitFor();
-        assert.equal(await op.locator(".ticket-queue header > .btn-primary").count(), 1);
+        assert.equal(
+          await op.locator(".ticket-queue header > .btn-primary").count(),
+          1,
+        );
         await op.locator(`.ticket-row[href*="/tickets/${ticketId}/"]`).click();
         await op.locator(".ticket-toolbar").waitFor();
         await op.locator(".ticket-toolbar-actions .icon-btn").click();
@@ -344,7 +438,15 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
           },
           f.member,
         );
-        await visit(ap, `/servers/${f.a.id}/tickets?assigned=1`);
+        await visit(ap, `/servers/${f.a.id}/tickets?assigned=0`);
+        await ap.locator(".claimable-tickets").waitFor();
+        await checkQueue(
+          ap,
+          "en",
+          ownTicket.id,
+          `${engine}-${width}-queue-en`,
+          ticketId,
+        );
         await ap
           .locator(".claimable-row")
           .filter({ hasText: `#${claimable.number}` })
@@ -356,6 +458,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
           .filter({ hasText: "No queue content leakage" })
           .waitFor();
         await visit(op, `/servers/${f.a.id}/settings`);
+        await gp.locator(".guest-current-handler").filter({hasText:f.first.user.displayName}).waitFor();
         const menu = await memberMenu(op, f.first);
         await snapshot(op, `${engine}-${width}-member-menu-en`);
         await menu
@@ -367,6 +470,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
             exact: true,
           })
           .click();
+        await gp.locator(".guest-current-handler").waitFor({ state: "detached" });
         await ap.locator(".composer textarea").waitFor({ state: "detached" });
         await ap.locator(".error-box").waitFor();
         const stored = await call(

@@ -232,3 +232,14 @@
   justify-content: flex-end;
   padding-block: 0;
 }
+
+.ticket-scope-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 12px;
+}
+.ticket-scope-filter [aria-current="page"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
