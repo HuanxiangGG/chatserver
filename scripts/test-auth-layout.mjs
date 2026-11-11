@@ -13,9 +13,10 @@ for (const [engine,type] of Object.entries({chromium,webkit})) {
  try {
   for (const [width,height] of [[320,568],[390,430],[768,600],[1280,480],[640,350]]) {
    const context=await browser.newContext({viewport:{width,height},isMobile:width<1024,hasTouch:width<1024});
-   const page=await context.newPage(),errors=[];page.on('pageerror',()=>errors.push('Uncaught page error'));
+   const page=await context.newPage(),errors=[];let activeMode='';page.on('pageerror',e=>errors.push({name:e.name}));
    try {
     for (const mode of ['register','login','forgot-password','reset-password']) {
+     activeMode=mode;
      await page.goto(`${base.origin}/${mode}`);const submit=page.locator('form button[type=submit]');await submit.waitFor();
      if(width===640)await page.locator('.auth-language select').selectOption('en');
      assert.equal(await page.locator('.story-art,.art-chip').count(),0);
@@ -40,6 +41,11 @@ for (const [engine,type] of Object.entries({chromium,webkit})) {
      results.push({engine,width,height,mode,passed:true,metrics});
     }
     assert.deepEqual(errors,[]);
+   } catch(error) {
+    const diagnostic={engine,width,height,mode:activeMode,path:new URL(page.url()).pathname,errors,state:await page.evaluate(()=>({auth:!!document.querySelector('.auth-screen'),bootstrap:!!document.querySelector('.app-bootstrap'),rootChildren:document.querySelector('#root')?.childElementCount}))};
+    await writeFile(new URL('auth-layout-failure.json',output),JSON.stringify(diagnostic,null,2),{mode:0o600});
+    await page.screenshot({path:new URL('auth-layout-failure.png',output).pathname});
+    console.error('Auth layout failure:',JSON.stringify(diagnostic));throw error;
    } finally {await context.close();}
   }
   const context=await browser.newContext({viewport:{width:320,height:568},isMobile:true,hasTouch:true});
