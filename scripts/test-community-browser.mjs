@@ -70,8 +70,20 @@ for(const [engine,type]of Object.entries({chromium,webkit}).filter(([engine])=>!
  await op.locator('.community-member').filter({hasText:'小林'}).getByRole('button').last().click();await op.getByRole('dialog').getByRole('button',{name:'发起私密工单',exact:true}).click();await op.locator('[role=dialog] input[name=subject]').fill('社区主主动联系');await op.locator('[role=dialog] textarea[name=content]').fill('可以在这里单独回复我。');await op.locator('[role=dialog] form>button').last().click();await op.waitForURL('**/tickets/**/chat/**');await op.locator('.message-content').filter({hasText:'可以在这里单独回复我'}).waitFor();
  await page.locator(`.rail-community[href="/servers/${f.server.id}"] .rail-dot`).waitFor({state:'attached'});
  if(width<640)await page.locator('.mobile-bottom-nav a[href="/communities"] .mobile-unread-dot').waitFor();
- const ownerTicketPath=new URL(op.url()).pathname;await op.locator('.ticket-toolbar-top > a').click();
- assert.equal(await op.locator('.ticket-queue header h1').textContent(),'工单队列');
+ const ownerTicketPath=new URL(op.url()).pathname;
+ // Delay the real community response: an unresolved role must stay in the loading
+ // state, rather than briefly displaying the ordinary member's ticket heading.
+ const queueDetailUrl=`${base.origin}/api/servers/${f.server.id}`;
+ let releaseQueueDetail,queueDetailSeen;
+ const queueDetailGate=new Promise(resolve=>{releaseQueueDetail=resolve;}),queueDetailRequested=new Promise(resolve=>{queueDetailSeen=resolve;});
+ await op.route(queueDetailUrl,async route=>{queueDetailSeen();await queueDetailGate;await route.continue();});
+ try{
+  await op.locator('.ticket-toolbar-top > a').click();await queueDetailRequested;await op.locator('.ticket-queue').waitFor();
+  assert.equal(await op.locator('.ticket-queue header h1').count(),0,'Do not guess the user role before community details load');
+  assert.equal(await op.locator('.ticket-queue header button, .ticket-queue .claimable-tickets').count(),0,'Role actions require loaded community permissions');
+  releaseQueueDetail();await op.locator('.ticket-queue header h1').waitFor();
+  assert.equal(await op.locator('.ticket-queue header h1').textContent(),'工单队列');
+ }finally{releaseQueueDetail();await op.unroute(queueDetailUrl);}
  await op.locator(`a[href="${ownerTicketPath}"]`).click();await op.locator('.ticket-toolbar').waitFor();
  for(const lang of['en','zh-CN']){await visit(page,`${base.origin}/settings`);await page.locator('.sound-settings select').first().selectOption(lang);await visit(page,`${base.origin}${path}`);await page.locator('.ticket-toolbar').waitFor();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
  assert.equal(await op.evaluate(()=>window.reviewUnhandled),0);assert.deepEqual(member.errors,[]);assert.deepEqual(owner.errors,[]);results.push({engine,width,passed:true,conversationId});

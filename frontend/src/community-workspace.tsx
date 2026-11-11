@@ -192,20 +192,25 @@ export function TicketsPage() {
     [retry, setRetry] = useState(0),
     [cursor, setCursor] = useState<string | null>(null),
     [paging, setPaging] = useState(false),
-    [community, setCommunity] = useState<CommunityDetail | null>(null);
+    [community, setCommunity] = useState<CommunityDetail | null>(null),
+    [communityError, setCommunityError] = useState("");
   useEffect(() => {
     let live = true;
+    setCommunityError("");
     api<CommunityDetail>(`/servers/${serverId}`)
       .then((v) => {
-        if (live) setCommunity(v);
+        if (live) {
+          setCommunity(v);
+          setCommunityError("");
+        }
       })
       .catch((e) => {
-        if (live) setError(e.message);
+        if (live) setCommunityError(e.message);
       });
     return () => {
       live = false;
     };
-  }, [serverId, app.sync]);
+  }, [serverId, app.sync, retry]);
   useEffect(() => {
     setTickets(null);
   }, [serverId, query, status, assigned]);
@@ -231,6 +236,23 @@ export function TicketsPage() {
       clearTimeout(timer);
     };
   }, [serverId, app.sync, app.conversations, query, status, retry, assigned]);
+  if (!community || community.id !== serverId) {
+    return (
+      <section className="community-panel ticket-queue">
+        <Link className="back-link" to={`/servers/${serverId}`}>
+          {tr("communityBackChannels")}
+        </Link>
+        {communityError ? (
+          <ErrorBox
+            message={communityError}
+            retry={() => setRetry((v) => v + 1)}
+          />
+        ) : (
+          <Spinner />
+        )}
+      </section>
+    );
+  }
   return (
     <section className="community-panel ticket-queue">
       <Link className="back-link" to={`/servers/${serverId}`}>
@@ -309,8 +331,11 @@ export function TicketsPage() {
           <ClaimableTickets serverId={serverId!} />
         )}
 
-      {error ? (
-        <ErrorBox message={error} retry={() => setRetry((v) => v + 1)} />
+      {communityError || error ? (
+        <ErrorBox
+          message={communityError || error}
+          retry={() => setRetry((v) => v + 1)}
+        />
       ) : !tickets ? (
         <Spinner />
       ) : !tickets.length ? (
