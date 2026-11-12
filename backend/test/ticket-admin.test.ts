@@ -694,6 +694,45 @@ it("refreshes only affected guest tickets after role capability changes, role gr
   for (const socket of [primary, otherA, otherB]) socket.disconnect();
 });
 
+it("returns real permission-scoped queue previews and reply direction without resurfacing hidden or retracted attachments", async () => {
+  const t = await create(true);
+  const firstView = await call(owner, "get", `/tickets/${t.id}`);
+  expect(firstView.body.lastMessage.content).toBe("Private first message");
+  expect(firstView.body.waitingFor).toBe("STAFF");
+  const reply = await send(owner, t, "The handler has replied");
+  expect(reply.status).toBe(201);
+  const list = await call(member, "get", `/servers/${a.id}/tickets`);
+  const row = list.body.tickets.find((item: any) => item.id === t.id);
+  expect(row.lastMessage.content).toBe("The handler has replied");
+  expect(row.waitingFor).toBe("MEMBER");
+  expect(new Date(row.lastActivityAt).getTime()).toBeGreaterThanOrEqual(new Date(reply.body.createdAt).getTime());
+  expect(row.unreadCount).toBeGreaterThan(0);
+  expect((await call(second, "get", `/servers/${a.id}/tickets`)).body.tickets.some((item: any) => item.id === t.id)).toBe(false);
+  expect((await call(second, "get", `/tickets/${t.id}`)).status).toBe(403);
+  expect((await call(member, "delete", `/messages/${reply.body.id}`)).status).toBe(200);
+  const hidden = (await call(member, "get", `/tickets/${t.id}`)).body;
+  expect(hidden.lastMessage.content).toBe("Private first message");
+  expect(hidden.waitingFor).toBe("MEMBER");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKAAAAABJRU5ErkJggg==", "base64");
+  const upload = await request(app).post("/api/uploads").set("Origin", origin).set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrfToken).attach("file", png, {filename: "evidence-private.png", contentType: "image/png"});
+  expect(upload.status).toBe(201);
+  const image = await call(owner, "post", `/conversations/${t.conversationId}/messages`, { content: "", attachmentIds: [upload.body.id], clientId: randomUUID() });
+  expect(image.status).toBe(201);
+  const withImage = (await call(member, "get", `/tickets/${t.id}`)).body;
+  expect(withImage.lastMessage.kind).toBe("IMAGE");
+  expect(withImage.lastMessage.filename).toBe("evidence-private.png");
+  expect((await call(owner, "post", `/messages/${image.body.id}/retract`, {})).status).toBe(200);
+  const withdrawn = (await call(member, "get", `/tickets/${t.id}`)).body;
+  expect(withdrawn.lastMessage.kind).toBe("RETRACTED");
+  expect(withdrawn.lastMessage.content).toBe("");
+  expect(withdrawn.lastMessage.filename).toBeUndefined();
+  expect((await call(owner, "patch", `/tickets/${t.id}`, {status: "CLOSED"})).status).toBe(200);
+  expect((await call(member, "get", `/tickets/${t.id}`)).body.waitingFor).toBeNull();
+  const queue = await call(second, "get", `/servers/${a.id}/tickets/claimable`);
+  expect(queue.status).toBe(200);
+  for (const pending of queue.body.tickets) expect(Object.keys(pending).sort()).toEqual(["category", "createdAt", "id", "number"]);
+});
+
 async function openGuest(
   serverId: string,
   ticket: any,

@@ -45,6 +45,36 @@ async function info(ticket: Prisma.TicketGetPayload<{}>, userId: string) {
       reads: { none: { userId, readAt: { not: null } } },
     },
   });
+  // The normal queue is already permission-scoped. Keep previews scoped to this
+  // reader too: a locally hidden message must not reappear in the list.
+  const [lastMessage, lastReply] = await Promise.all([
+    prisma.message.findFirst({
+      where: { conversationId: ticket.conversationId, hidden: { none: { userId } } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: {
+        content: true, createdAt: true, editedAt: true, retractedAt: true,
+        sender: { select: { displayName: true } },
+        attachments: { select: { mimeType: true, filename: true }, take: 1 },
+      },
+    }),
+    // Waiting is a conversation fact, not a manual status or an unread guess.
+    prisma.message.findFirst({
+      where: { conversationId: ticket.conversationId, retractedAt: null },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { senderId: true, guestTicketId: true, createdAt: true },
+    }),
+  ]);
+  const attachment = lastMessage?.attachments[0];
+  const lastActivityAt = new Date(Math.max(ticket.updatedAt.getTime(), lastReply?.createdAt.getTime() ?? 0, lastMessage?.editedAt?.getTime() ?? 0));
+  const preview = lastMessage ? {
+    content: lastMessage.retractedAt ? "" : Array.from(lastMessage.content).slice(0, 180).join(""),
+    senderName: lastMessage.sender?.displayName || ticket.guestName || "",
+    kind: lastMessage.retractedAt ? "RETRACTED" : lastMessage.content ? "TEXT" : attachment?.mimeType.startsWith("image/") ? "IMAGE" : attachment ? "FILE" : "TEXT",
+    filename: lastMessage.retractedAt ? undefined : attachment?.filename,
+    createdAt: lastMessage.createdAt,
+  } : null;
+  const waitingFor = ticket.status === "CLOSED" || !lastReply ? null :
+    lastReply.senderId === ticket.memberId || lastReply.guestTicketId === ticket.id ? "STAFF" : "MEMBER";
   const { recoveryHash: _secret, ...safe } = ticket;
   return {
     ...safe,
@@ -54,6 +84,9 @@ async function info(ticket: Prisma.TicketGetPayload<{}>, userId: string) {
     handoffAssignee:
       people.find((p) => p.id === ticket.handoffAssigneeId) ?? null,
     unreadCount,
+    lastMessage: preview,
+    lastActivityAt,
+    waitingFor,
   };
 }
 export async function notifyTicket(ticketId: string, prior: string[] = []) {
