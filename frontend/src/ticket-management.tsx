@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { MoreHorizontal } from "lucide-react";
+import { ChevronDown, MoreHorizontal } from "lucide-react";
 import { api, json, ApiError } from "./api";
 import { translate as tr, useLanguage, getLanguage } from "./i18n";
 import { useApp } from "./state";
@@ -37,6 +37,7 @@ export function ClaimableTickets({ serverId }: { serverId: string }) {
     [busy, setBusy] = useState<string | null>(null),
     [revision, setRevision] = useState(0),
     [cursor, setCursor] = useState<string | null>(null);
+  useEffect(() => { setRows(null); setCursor(null); }, [serverId]);
   useEffect(() => {
     let live = true;
     api<{ tickets: NonNullable<typeof rows>; cursor: string | null }>(
@@ -52,6 +53,7 @@ export function ClaimableTickets({ serverId }: { serverId: string }) {
       .catch((e) => {
         if (live) {
           setRows(null);
+          setCursor(null);
           setError(e.message);
         }
       });
@@ -60,8 +62,9 @@ export function ClaimableTickets({ serverId }: { serverId: string }) {
     };
   }, [serverId, app.sync, revision]);
   return (
-    <section className="claimable-tickets" aria-label={tr("adminClaimQueue")}>
-      <h2>{tr("adminClaimQueue")}</h2>
+    <details className="claimable-tickets">
+      <summary><ChevronDown size={16} aria-hidden="true"/><span>{tr("adminClaimQueue")}</span>{rows && <span className="claim-count">{rows.length}{cursor ? "+" : ""}</span>}</summary>
+      <div className="claimable-content">
       <p className="field-note">{tr("adminRedactedQueue")}</p>
       {error ? (
         <ErrorBox message={error} retry={() => setRevision((v) => v + 1)} />
@@ -77,9 +80,13 @@ export function ClaimableTickets({ serverId }: { serverId: string }) {
               <span>
                 {t.category === "GENERAL"
                   ? tr("communityGeneral")
-                  : t.category === "GUEST"
-                    ? tr("controlsGuestBadge")
-                    : t.category}
+                  : t.category === "SUPPORT"
+                    ? tr("communitySupport")
+                    : t.category === "SAFETY"
+                      ? tr("communitySafety")
+                      : t.category === "GUEST"
+                        ? tr("controlsGuestBadge")
+                        : t.category}
               </span>
               <time dateTime={t.createdAt}>
                 {tr("adminWaitingSince", {
@@ -88,7 +95,7 @@ export function ClaimableTickets({ serverId }: { serverId: string }) {
               </time>
             </div>
             <button
-              className="btn btn-primary"
+              className="btn btn-secondary"
               disabled={busy !== null}
               onClick={async () => {
                 setBusy(t.id);
@@ -136,7 +143,8 @@ export function ClaimableTickets({ serverId }: { serverId: string }) {
           {tr("communityMoreTickets")}
         </button>
       )}
-    </section>
+      </div>
+    </details>
   );
 }
 export function TicketChat() {
@@ -152,6 +160,7 @@ export function TicketChat() {
     [revision, setRevision] = useState(0),
     [menu, setMenu] = useState(false),
     [assign, setAssign] = useState(false),
+    [details, setDetails] = useState(false),
     [target, setTarget] = useState("");
   useEffect(() => {
     let live = true;
@@ -272,7 +281,10 @@ export function TicketChat() {
           · {tr("communityHandler")}:{" "}
           {ticket.assignee?.displayName || tr("adminCommunityOwner")}
         </p>
+
       </header>
+      {loadError && <ErrorBox message={loadError} retry={() => setRevision(v => v + 1)}/>}
+      {ticket.status === "CLOSED" && <p className="ticket-state-notice" role="status">{tr("workbenchClosedNotice")}</p>}
       {ticket.handoffAssigneeId && (
         <section className="ticket-consent-banner">
           <p>
@@ -325,6 +337,7 @@ export function TicketChat() {
           onClose={() => setMenu(false)}
         >
           <div className="member-action-list">
+            <button className="btn btn-secondary" onClick={() => { setMenu(false); setDetails(true); }}>{tr("workbenchDetails")}</button>
             {owner && (
               <button
                 className="btn btn-secondary"
@@ -358,6 +371,14 @@ export function TicketChat() {
           </div>
         </Dialog>
       )}
+      {details && <Dialog className="ticket-details-sheet" title={tr("workbenchDetails")} onClose={() => setDetails(false)}>
+          <dl>
+            <div><dt>{tr("communitySubject")}</dt><dd>{ticket.subject}</dd></div>
+            <div><dt>{tr("communityTicketCategory")}</dt><dd>{ticket.category === "GENERAL" ? tr("communityGeneral") : ticket.category === "SUPPORT" ? tr("communitySupport") : ticket.category === "SAFETY" ? tr("communitySafety") : ticket.category === "GUEST" ? tr("controlsGuestBadge") : ticket.category}</dd></div>
+            <div><dt>{tr("adminWhoCanRead")}</dt><dd>{tr(ticket.ownerOnly ? "adminOwnerOnly" : "adminAllowStaff")}</dd></div>
+            <div><dt>{tr("workbenchCreated")}</dt><dd><time dateTime={ticket.createdAt}>{new Date(ticket.createdAt).toLocaleString(getLanguage())}</time></dd></div>
+          </dl>
+      </Dialog>}
       {assign && (
         <Dialog
           className="ticket-action-sheet"

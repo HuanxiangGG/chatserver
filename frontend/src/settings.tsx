@@ -1,19 +1,17 @@
+import { SettingsWorkspace, type SettingsSection } from './settings-workspace';
 import { AppearanceSettings } from './appearance';
 import { translate as tr, useLanguage } from './i18n';
 import { NotificationSettings } from './notification-ui';
 import { SoundSettingsPanel } from './sound-ui';
 import { useSendShortcut } from './send-preference';
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
-  ArrowUpRight,
   Ban,
   ChevronRight,
   KeyRound,
   LogOut,
   ShieldCheck,
-  Sun,
-  UserRound,
 } from "lucide-react";
 import { api, json, ApiError } from "./api";
 import { useApp } from "./state";
@@ -22,6 +20,13 @@ import { Avatar, Dialog, Empty, ErrorBox, PageHeading, Spinner, useTask } from "
 export function SettingsPage() {
   useLanguage();
   const [sendShortcut, setSendShortcut] = useSendShortcut();
+  const location = useLocation();
+  const sections: SettingsSection[] = [
+    {id:'sound',label:'workspaceSound'}, {id:'notifications',label:'workspaceNotifications'},
+    {id:'account',label:'screen369'}, {id:'appearance',label:'screen370'},
+    {id:'chat-input',label:'workspaceChat'}, {id:'security',label:'screen371'}, {id:'blocked',label:'screen372'},
+  ];
+  const active = sections.some(section=>`#${section.id}`===location.hash) ? location.hash.slice(1) : 'sound';
   const { user, reloadUser, socket, logout, toast } = useApp(),
     [blocks, setBlocks] = useState<User[]>([]),
     [blocksLoaded, setBlocksLoaded] = useState(false),
@@ -62,25 +67,11 @@ export function SettingsPage() {
           title={tr('screen349')}
           description={tr('screen367')}
         />
-        <div className="settings-grid">
-          <nav className="settings-nav" aria-label={tr('screen368')}>
-            <a href="#account">
-              <UserRound size={17} />
-              {tr('screen369')}</a>
-            <a href="#appearance">
-              <Sun size={17} />
-              {tr('screen370')}</a>
-            <a href="#security">
-              <ShieldCheck size={17} />
-              {tr('screen371')}</a>
-            <a href="#blocked">
-              <Ban size={17} />
-              {tr('screen372')}<span>{blocksLoaded ? blocks.length : '—'}</span>
-            </a>
-          </nav>
-          <div className="settings-main"><SoundSettingsPanel /><NotificationSettings />
-            <section className="settings-section"><h2>{tr('screen373')}</h2><label>{tr('screen374')}<select value={sendShortcut} onChange={e => setSendShortcut(e.target.value === "modifier" ? "modifier" : "enter")}><option value="enter">{tr('screen375')}</option><option value="modifier">{tr('screen376')}</option></select></label></section>
-            <section className="settings-section" id="account">
+        <SettingsWorkspace sections={sections} active={active}>
+          {active==='sound' && <SoundSettingsPanel/>}
+          {active==='notifications' && <NotificationSettings/>}
+          {active==='chat-input' && <section className="settings-section"><h2>{tr('screen373')}</h2><label>{tr('screen374')}<select value={sendShortcut} onChange={e=>setSendShortcut(e.target.value==='modifier'?'modifier':'enter')}><option value="enter">{tr('screen375')}</option><option value="modifier">{tr('screen376')}</option></select></label></section>}
+          {active==='account' && <>            <section className="settings-section" id="account">
               <h2>{tr('screen369')}</h2>
               <p>{tr('screen377')}</p>
               <Link to="/profile" className="settings-profile">
@@ -114,8 +105,21 @@ export function SettingsPage() {
                 </div>
               </div>
             </section>
-            <AppearanceSettings />
-            <section className="settings-section" id="security">
+            <div className="settings-signout">
+              <div>
+                <strong>{tr('screen396')}</strong>
+                <p>{tr('screen397')}</p>
+              </div>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setConfirmLogout(true)}
+              >
+                <LogOut size={16} />
+                {tr('screen352')}</button>
+            </div>
+</>}
+          {active==='appearance' && <AppearanceSettings/>}
+          {active==='security' && <>            <section className="settings-section" id="security">
               <h2>{tr('screen371')}</h2>
               <p>{tr('screen385')}</p>
               <div className="setting-row">
@@ -137,7 +141,8 @@ export function SettingsPage() {
                 </p>
               </div>
             </section>
-            <section className="settings-section blocked-settings" id="blocked" aria-busy={blocksLoading}>
+</>}
+          {active==='blocked' && <>            <section className="settings-section blocked-settings" id="blocked" aria-busy={blocksLoading}>
               <h2>
                 {tr('screen372')}<span className="count-pill">{blocksLoaded ? blocks.length : '—'}</span>
               </h2>
@@ -173,26 +178,8 @@ export function SettingsPage() {
                 />
               ) : null}
             </section>
-            <div className="settings-signout">
-              <div>
-                <strong>{tr('screen396')}</strong>
-                <p>{tr('screen397')}</p>
-              </div>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setConfirmLogout(true)}
-              >
-                <LogOut size={16} />
-                {tr('screen352')}</button>
-            </div>
-            <div className="settings-version">
-              {tr('screen398')}<span>{tr('versionLabel', {version: '1.0.0'})}</span>
-              <Link to="/chat">
-                {tr('screen399')}<ArrowUpRight size={13} />
-              </Link>
-            </div>
-          </div>
-        </div>
+</>}
+        </SettingsWorkspace>
         {changePassword && (
           <Dialog title={tr('screen400')} onClose={() => setChangePassword(false)}>
             <form

@@ -21,7 +21,7 @@ const person=(id:string)=>({id,username:id,displayName:id,status:'OFFLINE'});
 const response=(data:unknown)=>new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});
 beforeEach(()=>{(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;fetchMock.mockReset();app.toast.mockReset();vi.stubGlobal('fetch',fetchMock);host=document.createElement('div');document.body.append(host);root=createRoot(host);});
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();});
-async function mount(){await act(async()=>root.render(React.createElement(MemoryRouter,null,React.createElement(SettingsPage))));}
+async function mount(){await act(async()=>root.render(React.createElement(MemoryRouter,{initialEntries:["/settings#blocked"]},React.createElement(SettingsPage))));}
 async function click(selector:string){await act(async()=>(host.querySelector(selector) as HTMLButtonElement).click());}
 it('keeps a previously loaded blocked list when refresh JSON fails, then retries a real readable response',async()=>{
  fetchMock.mockResolvedValueOnce(response([person('previous')])).mockResolvedValueOnce(new Response('[{"id":',{status:200})).mockResolvedValueOnce(response([person('recovered')]));

@@ -1,3 +1,4 @@
+import { useFormChanges } from './settings-workspace';
 import { isConversationMuted } from './conversation-preferences';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -62,23 +63,24 @@ export function SoundRuntime() {
  return null;
 }
 export function SoundSettingsPanel() {
- const { user } = useApp(), t = useSoundText(), [, refresh] = useState(0), [status, setStatus] = useState<Key | null>(null), [busy, setBusy] = useState(false);
+ const changes = useFormChanges();
+ const { user } = useApp(), t = useSoundText(), [, refresh] = useState(0), [status, setStatus] = useState<Key | null>(null), [busy, setBusy] = useState(false), [draft,setDraft] = useState<SoundSettings>(() => ({...settings}));
  const owner = useRef(user?.id); owner.current = user?.id;
  useEffect(() => {
-  const fn = () => refresh(v => v + 1); listeners.add(fn); return () => { listeners.delete(fn); };
- }, []);
- const change = (patch: Partial<SoundSettings>) => { settings = normalizeSound({ ...settings, ...patch }); const saved = write(user ? `harbor.sound.${user.id}` : 'harbor.sound.guest', JSON.stringify(settings)); setStatus(saved ? null : 'failed'); notify(); };
+  const fn = () => { refresh(v => v + 1); if(!changes.dirty) setDraft({...settings}); }; listeners.add(fn); fn(); return () => { listeners.delete(fn); };
+ }, [changes.dirty]);
+ const change = (patch: Partial<SoundSettings>) => { changes.changed(); setDraft(current => normalizeSound({...current,...patch})); setStatus(null); };
  async function enable() { const ok = await player?.unlock(); blocked = !ok; notify(); if (ok) change({ enabled: true }); }
  return <section className="settings-section sound-settings"><h2>{t('title')}</h2><label>{t('language')}<select value={getLanguage()} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'zh-CN')}><option value="zh-CN">{t("chinese")}</option><option value="en">{t("english")}</option></select></label>
- {!player?.ready && <button type="button" className="btn btn-primary" disabled={syncing} onClick={() => void enable()}>{t('enable')}</button>}
+ {!player?.ready && <button type="button" className="btn btn-secondary sound-enable" disabled={syncing} onClick={() => void enable()}>{t('enable')}</button>}
  {syncFailed && <p role="status">{t('failed')}</p>}
  {blocked && <p role="status">{t('blocked')}</p>}
- {(['enabled','direct','group','mention','dnd','scheduled'] as const).map(key => <label className="setting-row" key={key}><span>{t(key === 'scheduled' ? 'schedule' : key)}</span><span>{t(settings[key] ? 'on' : 'off')} <input type="checkbox" checked={settings[key]} disabled={busy || syncing} onChange={e => change({ [key]: e.target.checked })} /></span></label>)}
- <label>{t('volume', { volume: Math.round(settings.volume * 100) })}<input type="range" min="0" max="100" value={Math.round(settings.volume * 100)} disabled={busy || syncing} onChange={e => change({ volume: Number(e.target.value) / 100 })} /></label>
- <label>{t('tone')}<select value={settings.tone} disabled={busy || syncing} onChange={e => change({ tone: e.target.value === 'bell' ? 'bell' : 'soft' })}><option value="soft">{t('soft')}</option><option value="bell">{t('bell')}</option></select></label>
- <div className="sound-times">{(['start','end'] as const).map(key => <label key={key}>{t(key)}<input type="time" value={settings[key]} disabled={busy || syncing} onChange={e => change({ [key]: e.target.value })} /></label>)}</div><p>{t('hint')}</p>
- <div className="sound-actions"><button type="button" className="btn btn-secondary" disabled={busy || syncing} onClick={async () => { const ok = await player?.test(settings); setStatus(ok ? 'played' : 'blocked'); notify(); }}>{t('test')}</button><button type="button" className="btn btn-primary" disabled={busy || syncing} onClick={async () => { const id = user?.id; setBusy(true); try { if (id) await api('/users/me/sound', json('PUT', settings)); else if (!write('harbor.sound.guest', JSON.stringify(settings))) throw new Error('Local preference storage unavailable'); if (owner.current === id) setStatus('saved'); } catch { if (owner.current === id) setStatus('failed'); } finally { setBusy(false); } }}>{t('save')}</button></div>
- <p aria-live="polite">{busy || syncing ? t('loading') : status ? t(status) : ''}</p></section>;
+ {(['enabled','direct','group','mention','dnd','scheduled'] as const).map(key => <label className="setting-row" key={key}><span>{t(key === 'scheduled' ? 'schedule' : key)}</span><span>{t(draft[key] ? 'on' : 'off')} <input type="checkbox" checked={draft[key]} disabled={busy || syncing} onChange={e => change({ [key]: e.target.checked })} /></span></label>)}
+ <label>{t('volume', { volume: Math.round(draft.volume * 100) })}<input type="range" min="0" max="100" value={Math.round(draft.volume * 100)} disabled={busy || syncing} onChange={e => change({ volume: Number(e.target.value) / 100 })} /></label>
+ <label>{t('tone')}<select value={draft.tone} disabled={busy || syncing} onChange={e => change({ tone: e.target.value === 'bell' ? 'bell' : 'soft' })}><option value="soft">{t('soft')}</option><option value="bell">{t('bell')}</option></select></label>
+ <div className="sound-times">{(['start','end'] as const).map(key => <label key={key}>{t(key)}<input type="time" value={draft[key]} disabled={busy || syncing} onChange={e => change({ [key]: e.target.value })} /></label>)}</div><p>{t('hint')}</p>
+ <div className="sound-actions"><button type="button" className="btn btn-secondary" disabled={busy || syncing} onClick={async () => { const ok = await player?.test(draft); setStatus(ok ? 'played' : 'blocked'); notify(); }}>{t('test')}</button><button type="button" className="btn btn-primary" disabled={busy || syncing} onClick={async () => { const id = user?.id; setBusy(true); try { if (id) await api('/users/me/sound', json('PUT', draft)); if (owner.current === id) { settings = normalizeSound(draft); if (!write(id ? `harbor.sound.${id}` : 'harbor.sound.guest', JSON.stringify(settings))) throw new Error('Local preference storage unavailable'); setStatus(null); changes.saved(); notify(); } } catch { if (owner.current === id) setStatus('failed'); } finally { setBusy(false); } }}>{t('save')}</button></div>
+ {changes.notice}<p aria-live="polite">{busy || syncing ? t('loading') : status ? t(status) : ''}</p>{changes.dialog}</section>;
 }
 export function SoundEntry() {
  const { user } = useApp(), t = useSoundText(), [, render] = useState(0), [busy,setBusy] = useState(false);

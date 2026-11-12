@@ -21,10 +21,11 @@ export function MemberActions({
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [confirm, setConfirm] = useState<"ADMIN" | "MODERATOR" | "MEMBER" | null>(
+    [confirm, setConfirm] = useState<"ADMIN" | "MODERATOR" | "MEMBER" | "REMOVE" | "BAN" | null>(
       null,
     ),
-    [restricting, setRestricting] = useState(false);
+    [restricting, setRestricting] = useState(false),
+    [banReason, setBanReason] = useState("");
   async function mutate(method: string, data: unknown) {
     if (busy) return;
     setBusy(true);
@@ -71,7 +72,7 @@ export function MemberActions({
             <div className="form-stack">
               <p className="member-confirm">
                 {tr(
-                  confirm === "ADMIN"
+                  confirm === "REMOVE" ? "workspaceRemoveMember" : confirm === "BAN" ? "workspaceBanMember" : confirm === "ADMIN"
                     ? "adminConfirmAppoint"
                     : confirm === "MODERATOR"
                       ? "adminConfirmModerator"
@@ -79,12 +80,13 @@ export function MemberActions({
                   { member: member.user.displayName, community: server.name },
                 )}
               </p>
-              <p className="muted">{tr("adminScopeNotice")}</p>
+              {confirm === "BAN" && <label>{tr("workspaceBanReason")}<textarea maxLength={500} value={banReason} onChange={e => setBanReason(e.target.value)} /></label>}
+              {confirm !== "REMOVE" && confirm !== "BAN" && <p className="muted">{tr("adminScopeNotice")}</p>}
               <div className="dialog-actions">
                 <button
-                  className="btn btn-primary"
+                  className={`btn ${confirm === "REMOVE" || confirm === "BAN" ? "btn-danger" : "btn-primary"}`}
                   disabled={busy}
-                  onClick={() => void mutate("PATCH", { role: confirm })}
+                  onClick={() => void (confirm === "REMOVE" || confirm === "BAN" ? mutate("DELETE", {ban: confirm === "BAN", reason: banReason.trim()}) : mutate("PATCH", { role: confirm }))}
                 >
                   {tr(busy ? "communitySubmitting" : "adminConfirm")}
                 </button>
@@ -171,10 +173,11 @@ export function MemberActions({
                     : "screen655",
                 )}
               </button>
+              <p className="member-danger-label">{tr("workspaceDangerousActions")}</p>
               <button
                 className="btn btn-secondary"
                 disabled={busy}
-                onClick={() => void mutate("DELETE", {})}
+                onClick={() => setConfirm("REMOVE")}
               >
                 {tr("screen656")}
               </button>
@@ -182,12 +185,7 @@ export function MemberActions({
                 <button
                   className="btn btn-danger"
                   disabled={busy}
-                  onClick={() =>
-                    void mutate("DELETE", {
-                      ban: true,
-                      reason: tr("screen657"),
-                    })
-                  }
+                  onClick={() => setConfirm("BAN")}
                 >
                   {tr("screen658")}
                 </button>

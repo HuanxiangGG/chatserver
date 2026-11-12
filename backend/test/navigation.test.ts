@@ -31,6 +31,9 @@ it('discards malformed browser preferences and surfaces failed writes to callers
 it('shows real group and unread filters and persistent collapsible navigation', async () => {
  await render('/chat?view=groups');
  expect(host.querySelectorAll('.conversation-entry')).toHaveLength(1);expect(host.querySelector('.conversation-entry')!.textContent).toContain('group');
+ expect(host.querySelector('.nav-is-collapsed')).not.toBeNull();
+ await click(host.querySelector(`[aria-label="${tr('navExpand')}"]`)!);
+ expect(host.querySelector('.nav-is-collapsed')).toBeNull();expect(localStorage.getItem('harbor.nav.collapsed')).toBe('false');
  await click(host.querySelector(`[aria-label="${tr('navCollapse')}"]`)!);
  expect(host.querySelector('.nav-is-collapsed')).not.toBeNull();expect(localStorage.getItem('harbor.nav.collapsed')).toBe('true');
  const unread=[...host.querySelectorAll('a')].find(a=>a.getAttribute('href')==='/chat?view=unread')!;await click(unread);
@@ -74,4 +77,15 @@ it('returns keyboard focus to conversation action toggle when Escape closes its 
  const menu=host.querySelector('.conversation-actions')!;
  await act(async()=>menu.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
  expect(host.querySelector('.conversation-actions')).toBeNull();expect(document.activeElement).toBe(toggle);
+});
+
+it('keeps one desktop account entry and returns focus when its dialog closes', async () => {
+ await render();
+ const trigger = host.querySelector('.rail-account-button') as HTMLButtonElement;
+ expect(trigger).not.toBeNull(); trigger.focus(); await click(trigger);
+ const menu = host.querySelector('.account-dialog')!;
+ expect(menu.getAttribute('role')).toBe('dialog');
+ expect(menu.querySelector('a[href="/settings"]')).not.toBeNull();
+ await act(async () => document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ expect(host.querySelector('.account-dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
 });

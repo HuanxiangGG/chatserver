@@ -41,9 +41,20 @@
     "adminConsentRequiredError": "请先请求当事人同意转交，再指派新的处理人。",
     "adminConsentStaleError": "转交请求已改变，请刷新工单后重试。",
     "adminConsentParticipantError": "只有工单当事人可以同意或拒绝转交。",
-    "adminSettingsSections": "社区设置分区",
     "adminRevokeModerator": "撤销版主",
-    "adminRealtimeClosing": "连接正在关闭，请稍后重试。"
+    "adminRealtimeClosing": "连接正在关闭，请稍后重试。",
+    "workbenchUnread": "{count} 条未读",
+    "workbenchWaitingMember": "等待用户回复",
+    "workbenchWaitingStaff": "等待处理人回复",
+    "workbenchWaitingYou": "等待你回复",
+    "workbenchWaitingHint": "按最后一条未撤回消息的发送者判断。",
+    "workbenchUpdated": "更新于 {time}",
+    "workbenchRetracted": "消息已撤回",
+    "workbenchImage": "图片",
+    "workbenchFile": "文件",
+    "workbenchDetails": "工单详情",
+    "workbenchCreated": "创建时间",
+    "workbenchClosedNotice": "工单已关闭，历史仍可查看。重开后可以继续回复。"
   },
   "en": {
     "adminCommunityOwner": "Community owner",
@@ -87,8 +98,19 @@
     "adminConsentRequiredError": "Request the participant’s consent before assigning a new handler.",
     "adminConsentStaleError": "The handoff request has changed. Refresh the ticket and try again.",
     "adminConsentParticipantError": "Only the ticket participant can approve or decline a handoff.",
-    "adminSettingsSections": "Community settings sections",
     "adminRevokeModerator": "Remove moderator role",
-    "adminRealtimeClosing": "The connection is closing. Try again shortly."
+    "adminRealtimeClosing": "The connection is closing. Try again shortly.",
+    "workbenchUnread": "{count} unread",
+    "workbenchWaitingMember": "Waiting for member",
+    "workbenchWaitingStaff": "Waiting for a reply",
+    "workbenchWaitingYou": "Waiting for your reply",
+    "workbenchWaitingHint": "Based on who sent the latest message that has not been retracted.",
+    "workbenchUpdated": "Updated {time}",
+    "workbenchRetracted": "Message retracted",
+    "workbenchImage": "Image",
+    "workbenchFile": "File",
+    "workbenchDetails": "Ticket details",
+    "workbenchCreated": "Created",
+    "workbenchClosedNotice": "This ticket is closed. You can still read its history. Reopen it to continue the conversation."
   }
 }

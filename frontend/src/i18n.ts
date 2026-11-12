@@ -1,3 +1,4 @@
+import settingsWorkspaceMessages from './locales/settings-workspace.json';
 import ticketAdminMessages from './locales/ticket-admin.json';
 import controlsMessages from './locales/community-controls.json';
 import apiClientMessages from './locales/api-client.json';
@@ -11,7 +12,7 @@ import baseMessages from './locales/sound.json';
 import appearanceMessages from './locales/appearance.json';
 import navigationMessages from './locales/navigation.json';
 import redesignMessages from './locales/ui-redesign.json';
-const messages = { 'zh-CN': { ...ticketAdminMessages['zh-CN'], ...controlsMessages['zh-CN'], ...baseMessages['zh-CN'], ...apiClientMessages['zh-CN'], ...communityMessages['zh-CN'], ...ticketBotMessages['zh-CN'], ...communityPolicyMessages['zh-CN'], ...appearanceMessages['zh-CN'], ...navigationMessages['zh-CN'], ...redesignMessages['zh-CN'], ...harborAuthMessages['zh-CN'] }, en: { ...ticketAdminMessages.en, ...controlsMessages.en, ...baseMessages.en, ...apiClientMessages.en, ...communityMessages.en, ...ticketBotMessages.en, ...communityPolicyMessages.en, ...appearanceMessages.en, ...navigationMessages.en, ...redesignMessages.en, ...harborAuthMessages.en } };
+const messages = { 'zh-CN': { ...settingsWorkspaceMessages['zh-CN'], ...ticketAdminMessages['zh-CN'], ...controlsMessages['zh-CN'], ...baseMessages['zh-CN'], ...apiClientMessages['zh-CN'], ...communityMessages['zh-CN'], ...ticketBotMessages['zh-CN'], ...communityPolicyMessages['zh-CN'], ...appearanceMessages['zh-CN'], ...navigationMessages['zh-CN'], ...redesignMessages['zh-CN'], ...harborAuthMessages['zh-CN'] }, en: { ...settingsWorkspaceMessages.en, ...ticketAdminMessages.en, ...controlsMessages.en, ...baseMessages.en, ...apiClientMessages.en, ...communityMessages.en, ...ticketBotMessages.en, ...communityPolicyMessages.en, ...appearanceMessages.en, ...navigationMessages.en, ...redesignMessages.en, ...harborAuthMessages.en } };
 export type Language = 'zh-CN' | 'en';
 export type TranslationKey = keyof typeof messages.en;
 const storageKey = 'harbor.language';

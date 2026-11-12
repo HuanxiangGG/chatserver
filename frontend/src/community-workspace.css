@@ -28,49 +28,6 @@
 .ticket-queue header > .btn {
   flex-shrink: 0;
 }
-.ticket-filters summary {
-  cursor: pointer;
-  min-height: 44px;
-  align-content: center;
-  color: var(--muted);
-}
-.community-filters {
-  display: flex;
-  gap: 16px;
-  margin: 12px 0 20px;
-}
-.community-filters label {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: 6px;
-}
-.ticket-list {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--border);
-}
-.ticket-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  text-align: start;
-  gap: 16px;
-  padding: 16px 4px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  min-height: 60px;
-}
-.ticket-row:hover {
-  background: var(--soft);
-}
-.ticket-row span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.ticket-row small,
 .community-bot-row small {
   display: block;
   color: var(--muted);
@@ -343,13 +300,6 @@
 @media (max-width: 639px) {
   .community-panel {
     padding: 12px;
-  }
-  .ticket-filters:not([open]) .community-filters {
-    display: none;
-  }
-  .community-filters {
-    flex-direction: column;
-    gap: 10px;
   }
   .ticket-chat .chat-header {
     height: 44px;

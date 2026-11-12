@@ -12,14 +12,15 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   color-scheme: light;
-  --app: #f4f5f7;
+  --app: #fafbfc;
   --surface: #fff;
-  --soft: #f7f9fd;
-  --soft-2: #e9edf7;
-  --text: #202b43;
+  --rail: #edf0f6;
+  --soft: #f1f3f7;
+  --soft-2: #e8ecf3;
+  --text: #202735;
   --muted: #66748b;
   --subtle: #53637c;
-  --border: #dce3ef;
+  --border: #d7dce6;
   --accent: #465db0;
   --accent-hover: #374a90;
   --accent-soft: #eceffa;
@@ -31,9 +32,9 @@
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 12px;
-  --nav-width: 208px;
-  --list-width: 304px;
-  --message-gap: 14px;
+  --nav-width: 168px;
+  --list-width: 280px;
+  --message-gap: 12px;
   --message-font-size: 16px;
   --duration: 160ms;
   --app-height: 100svh;
@@ -43,19 +44,20 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --app: #121722;
-  --surface: #1a202c;
-  --soft: #202735;
-  --soft-2: #202e48;
+  --app: #131720;
+  --surface: #1b202b;
+  --rail: #181d27;
+  --soft: #242b38;
+  --soft-2: #2c3443;
   --text: #e9eef9;
   --muted: #9aaac3;
   --subtle: #b3c0d5;
-  --border: #283650;
-  --accent: #a4b2ed;
+  --border: #303948;
+  --accent: #a4b2ee;
   --accent-hover: #c0caf4;
   --accent-soft: #2b3455;
-  --bubble: #1a2840;
-  --own: #29334d;
+  --bubble: #202938;
+  --own: #2d3650;
   --danger: #ff91a6;
   --success: #69d7b7;
   --shadow: 0 4px 16px #0003;
@@ -136,8 +138,8 @@ select {
     color var(--duration);
 }
 :focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 input,
 textarea,
@@ -282,14 +284,14 @@ input[type="range"] {
   border-color: var(--surface);
 }
 .page-content {
-  padding: 36px clamp(20px, 3vw, 48px) 56px;
+  padding: 24px clamp(18px, 3vw, 40px) 40px;
   max-width: 1200px;
 }
 .page-heading {
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 .page-heading h1 {
-  font-size: 30px;
+  font-size: 24px;
   letter-spacing: -0.035em;
 }
 .page-heading p {
@@ -317,10 +319,13 @@ input[type="range"] {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 .settings-section {
-  padding: 24px;
+  padding: 22px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
 }
 .settings-section > h2 {
   font-size: 17px;
@@ -515,3 +520,8 @@ select {
   background-repeat: no-repeat;
 }
 .dialog > header > .icon-btn { width: 44px; height: 44px; }
+
+@keyframes panel-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.dialog { animation: panel-in var(--duration) ease-out; }
+@media (prefers-reduced-motion: reduce) { .dialog { animation: none; } }
+:root[data-motion="reduced"] .dialog { animation: none; }

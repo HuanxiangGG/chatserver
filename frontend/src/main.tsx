@@ -7,11 +7,12 @@ import { SoundRuntime } from './sound-ui';
 import React from "react";
 import ReactDOM from "react-dom/client";
 import {
-  BrowserRouter,
+  createBrowserRouter,
+  createRoutesFromElements,
+  RouterProvider,
   Navigate,
   Outlet,
   Route,
-  Routes,
   useLocation,
 } from "react-router-dom";
 import { AppProvider, useApp } from "./state";
@@ -44,14 +45,11 @@ function Guard() {
     <Navigate to="/login" state={{ from: location.pathname }} replace />
   );
 }
-function App() {
-  useVisualViewport();
-  useLanguage();
-  return (
-    <BrowserRouter>
-      <AppProvider>
-        <SoundRuntime /><NotificationRuntime />
-        <Routes>
+function ProviderShell() {
+  return <AppProvider><SoundRuntime/><NotificationRuntime/><Outlet/></AppProvider>;
+}
+const router = createBrowserRouter(createRoutesFromElements(
+  <Route element={<ProviderShell/>}>
           <Route path="/guest/:serverId" element={<GuestTickets/>} />
           <Route path="/guest/:serverId/tickets/:ticketId" element={<GuestTickets/>} />
           <Route path="/invite/:token" element={<InvitePage />} />
@@ -78,10 +76,12 @@ function App() {
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/chat" replace />} />
-        </Routes>
-      </AppProvider>
-    </BrowserRouter>
-  );
+  </Route>
+));
+function App() {
+  useVisualViewport();
+  useLanguage();
+  return <RouterProvider router={router}/>;
 }
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

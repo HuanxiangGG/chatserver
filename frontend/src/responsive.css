@@ -6,8 +6,8 @@
 }
 @media (min-width: 1440px) {
   :root {
-    --nav-width: 220px;
-    --list-width: 324px;
+    --nav-width: 168px;
+    --list-width: 288px;
   }
   .conversation-info {
     width: 300px;
@@ -30,14 +30,11 @@
   .chat-header-actions > .btn {
     max-width: 140px;
   }
-  .settings-grid {
-    grid-template-columns: 160px minmax(0, 1fr);
-  }
 }
 @media (min-width: 640px) and (max-width: 1023px) {
   :root {
-    --nav-width: 76px;
-    --list-width: 264px;
+    --nav-width: 64px;
+    --list-width: 248px;
   }
   .nav-rail {
     padding-inline: 10px;
@@ -89,7 +86,7 @@
     max-width: calc(100% - 104px);
   }
   .message-tools {
-    opacity: 1;
+    opacity: 0;
     flex-direction: column;
     gap: 0;
   }
@@ -101,22 +98,6 @@
   .page-content {
     padding: 28px 22px;
   }
-  .settings-grid {
-    display: block;
-  }
-  .settings-nav {
-    display: flex;
-    position: static;
-    gap: 6px;
-    overflow-x: auto;
-    margin-bottom: 20px;
-  }
-  .settings-nav > a {
-    flex: none;
-  }
-  .community-overview-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 @media (max-width: 1023px) {
   .app-layout {
@@ -126,9 +107,8 @@
     height: var(--app-height, 100svh);
     max-height: 100lvh;
   }
-  .message-tools {
-    opacity: 1;
-  }
+  .message-tools { opacity: 0; pointer-events: none; }
+  .message-row:focus-within .message-tools { opacity: 1; pointer-events: auto; }
   .message-row {
     animation: none;
   }
@@ -180,6 +160,12 @@
 }
 @media (max-width: 639px),
   (max-width: 1023px) and (max-height: 500px) and (pointer: coarse) {
+  .person-card { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .person-top { grid-column: 1; }
+  .person-bio { grid-column: 1; grid-row: 2; }
+  .person-status { grid-column: 2; grid-row: 2; gap: 4px; }
+  .person-card > .btn { grid-column: 2; grid-row: 1; padding-inline: 10px; }
+
   .app-layout,
   .app-layout:has(.sidebar-wrapper) {
     display: grid;
@@ -401,7 +387,7 @@
     flex-direction: column;
     margin-top: 0;
     gap: 0;
-    opacity: 1;
+    opacity: 0;
   }
   .message-tools > button:not(.message-more),
   .message-tools > .icon-btn:not(.message-more) {
@@ -412,24 +398,8 @@
     min-width: 44px;
     height: 44px;
   }
-  .message-menu {
-    right: 0;
-    top: 40px;
-    min-width: 170px;
-  }
-  .own .message-menu {
-    left: 0;
-    right: auto;
-  }
-  .message-menu .message-reply-mobile {
-    display: flex;
-  }
-  .message-row:not(.own) .message-menu {
-    right: 0;
-  }
-  .message-menu button {
-    min-height: 44px;
-  }
+  .dialog-backdrop:has(.message-actions-dialog) { align-items: flex-end; }
+  .message-actions-dialog { width: 100%; max-height: 85%; }
   .message-content {
     line-height: 1.6;
   }
@@ -614,26 +584,8 @@
   .page-heading > .btn {
     width: 100%;
   }
-  .settings-grid {
-    display: block;
-  }
-  .settings-nav {
-    display: flex;
-    position: static;
-    gap: 6px;
-    overflow: auto;
-    margin-bottom: 16px;
-    padding-bottom: 6px;
-  }
-  .settings-nav > a {
-    flex: none;
-    min-height: 44px;
-  }
   .settings-section {
     padding: 18px;
-  }
-  .settings-main {
-    gap: 14px;
   }
   .setting-row {
     align-items: flex-start;
@@ -658,10 +610,6 @@
   .settings-signout {
     flex-wrap: wrap;
     gap: 15px;
-  }
-  .settings-version {
-    flex-wrap: wrap;
-    gap: 10px;
   }
   .theme-options {
     flex-wrap: wrap;
@@ -767,20 +715,6 @@
   }
   .community-overview {
     padding: 24px 18px;
-  }
-  .community-hero {
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  .community-hero h1 {
-    font-size: 24px;
-  }
-  .community-hero > .btn {
-    margin-left: 0;
-  }
-  .community-overview-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
   }
   .community-monogram {
     width: 32px;
