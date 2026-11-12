@@ -204,7 +204,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
       const { p: op } = owner,
         { p: gp } = guest;
       try {
-        await visit(op, `/servers/${f.server.id}/settings`);
+        await visit(op, `/servers/${f.server.id}/settings#ticket-settings`);
         await op.locator("#ticket-settings").waitFor();
         const privateSwitch = op
             .locator("#ticket-settings input[type=checkbox]")
@@ -234,6 +234,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
         assert(await guestSwitch.isChecked());
         if (engine === "chromium" && width === 1440) {
           // Exercise the actual UI installation, including the actionable empty-channel error.
+          await visit(op, `/servers/${f.server.id}/settings#community-bots`);
           const form = op.locator("#community-bots form");
           await form
             .locator("select[name=catalog]")
@@ -290,10 +291,9 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
             guideHistory.messages.filter((m) => m.sender.role === "BOT").length,
             0,
           );
-          await op
-            .locator(".community-bot-row")
-            .getByRole("button", { name: "移除", exact: true })
-            .click();
+          await op.locator(".community-bot-row").getByRole("button").click();
+          await op.getByRole("dialog").getByRole("button", { name: "移除", exact: true }).click();
+          await op.getByRole("dialog").getByRole("button", { name: "移除", exact: true }).click();
           await op.locator(".community-bot-row").waitFor({ state: "detached" });
           await call(`/invites/${f.invite.token}/join`, "POST", {}, f.b);
           assert.equal(
@@ -308,7 +308,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
             1,
           );
         }
-        await visit(op, `/servers/${f.server.id}/settings`);
+        await visit(op, `/servers/${f.server.id}/settings#channels`);
         await op
           .getByRole("button", { name: "以普通成员身份预览", exact: true })
           .click();
@@ -528,7 +528,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit })) {
           );
         }
         // Only the selected channel is released, leaving the second restriction intact.
-        await visit(op, `/servers/${f.server.id}/settings`);
+        await visit(op, `/servers/${f.server.id}/settings#community-members`);
         await op
           .locator(".community-member")
           .filter({ has: op.locator(`a[href="/profile/${f.a.user.id}"]`) })

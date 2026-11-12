@@ -105,10 +105,10 @@ for (const [engine, browserType] of Object.entries({ chromium, webkit })) {
     }
     assert.deepEqual(errors, [], `${engine}/${width}: browser errors`);
     await page.screenshot({ path: new URL(`${engine}-${width}-chat.png`, output).pathname }); results.push({ engine, width, passed: true, metrics });
-    if (width === 390 || width === 1440) { await navigate(page,`${base.origin}/settings`); await page.locator('.appearance-settings').waitFor(); await page.screenshot({ path: new URL(`${engine}-${width}-settings.png`, output).pathname }); assert.deepEqual(errors, []);
+    if (width === 390 || width === 1440) { await navigate(page,`${base.origin}/settings#appearance`); await page.locator('.appearance-settings').waitFor(); await page.screenshot({ path: new URL(`${engine}-${width}-settings.png`, output).pathname }); assert.deepEqual(errors, []);
      if (width === 390) {
       for (const language of ['zh-CN','en']) for (const theme of ['dark','light']) {
-       await page.locator('.sound-settings select').first().selectOption(language);
+       await navigate(page,`${base.origin}/settings#sound`);await page.locator('.sound-settings select').first().selectOption(language);await navigate(page,`${base.origin}/settings#appearance`);
        await page.locator('.theme-choice').nth(theme === 'dark' ? 0 : 1).click();
        await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, theme);
        assert.equal(await page.locator('html').getAttribute('lang'), language);

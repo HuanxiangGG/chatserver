@@ -69,6 +69,16 @@ jobs:
         env:
           REDIS_URL: redis://localhost:6379/14
           BROWSER_TEST_SCRIPT: scripts/test-ticket-admin-browser.mjs
+      - name: Workspace layout and real interaction acceptance
+        run: npm run test:browser:ci
+        env:
+          REDIS_URL: redis://localhost:6379/15
+          BROWSER_TEST_SCRIPT: scripts/test-ui-workspace.mjs
+      - name: Settings save, navigation guard and bot action acceptance
+        run: npm run test:browser:ci
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          BROWSER_TEST_SCRIPT: scripts/test-settings-workspace.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

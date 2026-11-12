@@ -137,7 +137,7 @@ async function visit(page, path) {
   await navigate(page, `${base.origin}${path}`);
 }
 async function language(page, lang) {
-  await visit(page, "/settings");
+  await visit(page, "/settings#sound");
   await page.locator(".sound-settings select").first().selectOption(lang);
 }
 async function memberMenu(page, p) {
@@ -260,7 +260,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
           { role: "ADMIN" },
           f.owner,
         );
-        await visit(op, `/servers/${f.a.id}/settings`);
+        await visit(op, `/servers/${f.a.id}/settings#community-members`);
         const dialog = await memberMenu(op, f.first);
         await dialog
           .getByRole("button", {
@@ -286,6 +286,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
           (await call(`/servers/${f.b.id}`, "GET", undefined, f.first)).role,
           "MEMBER",
         );
+        await visit(op, `/servers/${f.a.id}/settings#ticket-settings`);
         await op.getByLabel("允许游客免注册开单", { exact: true }).check();
         await op
           .getByLabel(dictionary["zh-CN"].adminClaimSetting, { exact: true })
@@ -447,6 +448,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
           `${engine}-${width}-queue-en`,
           ticketId,
         );
+        await ap.locator(".claimable-tickets summary").click();
         await ap
           .locator(".claimable-row")
           .filter({ hasText: `#${claimable.number}` })
@@ -457,7 +459,7 @@ for (const [engine, type] of Object.entries({ chromium, webkit }).filter(
           .locator(".message-content")
           .filter({ hasText: "No queue content leakage" })
           .waitFor();
-        await visit(op, `/servers/${f.a.id}/settings`);
+        await visit(op, `/servers/${f.a.id}/settings#community-members`);
         await gp.locator(".guest-current-handler").filter({hasText:f.first.user.displayName}).waitFor();
         const menu = await memberMenu(op, f.first);
         await snapshot(op, `${engine}-${width}-member-menu-en`);
