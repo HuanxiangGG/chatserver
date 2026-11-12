@@ -1,3 +1,4 @@
+import { chatWorkspaceFor } from './chat-workspace';
 import { ChannelCommands, ChannelActions }  from './community-tools';
 import { continuesMessageGroup } from './message-grouping';
 import { getLanguage, translate as tr, useLanguage } from './i18n';
@@ -8,7 +9,7 @@ import { MessageSearch } from './message-search';
 import { useSoundText } from './sound-ui';
 import { shouldSend, useSendShortcut } from './send-preference';
 import { TypingReporter } from './typing-reporter';
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
@@ -98,6 +99,7 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
     [emojiOpen, setEmojiOpen] = useState(false),
     [infoOpen, setInfoOpen] = useState(false),
     [atBottom, setAtBottom] = useState(true),
+    [newMessages, setNewMessages] = useState(false),
     [firstUnreadId, setFirstUnreadId] = useState<string | null>(null),
     [group, setGroup] = useState(false),
     [typing, setTyping] = useState<Record<string, number>>({}),
@@ -117,13 +119,25 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
     viewportChanging = useRef(false),
     task = useTask(),
     navigate = useNavigate();
-  const drafts = useRef(new Map<string, MediaDraft>());
-  const sendLock = useRef(false);
-  const outbox = useRef<{ conversationId: string; pending: MediaDraft; reply: Message | null; key: string; createdAt: string; error: string | null }[]>([]);
-  const acceptedIds = useRef(new Set<string>());
-  const restoredDraft = useRef(new Map<string, { key: string; text: string }>());
+  const workspace = chatWorkspaceFor(user?.id ?? null);
+  const drafts = useRef(workspace.drafts);
+  drafts.current = workspace.drafts;
+  const restorePosition = useRef<import('./chat-workspace').ReadingPosition | null>(null);
+  const {sendLock, outbox, acceptedIds, restoredDraft} = workspace;
   const alive = useRef(true);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; if (!sendLock.current) { outbox.current.forEach(item => item.pending.clear()); outbox.current = []; } }; }, []);
+  useEffect(() => {
+    alive.current = true;
+    const update = (message?: Message) => {
+      if (!workspace.active) return;
+      renderDraft(v => v + 1);
+      setDraft(activeId.current ? drafts.current.get(activeId.current)?.text || '' : '');
+      setSending(sendLock.current); setUploading(workspace.upload.active);
+      setUploadName(workspace.upload.name); setUploadProgress(workspace.upload.progress);
+      if (message && message.conversationId === activeId.current) setMessages(old => old.some(m => m.id === message.id) ? old : old.concat(message));
+    };
+    workspace.listeners.add(update); update();
+    return () => { alive.current = false; workspace.listeners.delete(update); };
+  }, [workspace]);
   useEffect(() => {
     if (!emojiOpen) return;
     const closeOutside = (event: PointerEvent) => {
@@ -156,23 +170,33 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
     return drafts.current.get(key)!;
   };
   const media = id ? queue() : null;
-  useEffect(() => () => { drafts.current.forEach(d => d.clear()); drafts.current.clear(); }, []);
+
   activeId.current = id;
   const load = useCallback(
     async (quiet = false) => {
       if (!id) return;
-      if (!quiet) followBottom.current = true;
+      const saved = quiet ? undefined : workspace.reading.get(id);
+      if (!quiet) followBottom.current = saved?.atBottom ?? true;
       if (!quiet) setLoading(true);
       setError("");
       try {
         const [c, result] = await Promise.all([
           api<Conversation>(`/conversations/${id}`),
-          api<{ messages: Message[]; hasMore: boolean }>(
-            `/conversations/${id}/messages`,
-          ),
+          api<{ messages: Message[]; hasMore: boolean; hasNewer?: boolean }>(
+            saved?.anchorId && !saved.atBottom
+              ? `/conversations/${id}/messages/${saved.anchorId}/context`
+              : `/conversations/${id}/messages`,
+          ).catch(error => {
+            if (saved?.anchorId && error instanceof ApiError && error.status === 404) {
+              workspace.reading.delete(id); followBottom.current = true;
+              return api<{ messages: Message[]; hasMore: boolean; hasNewer?: boolean }>(`/conversations/${id}/messages`);
+            }
+            throw error;
+          }),
         ]);
         if (activeId.current !== id) return;
         setConversation(c);
+        if (!quiet) { restorePosition.current = saved && !followBottom.current ? saved : null; setContextView(!!result.hasNewer); setAtBottom(followBottom.current); if (followBottom.current) setNewMessages(false); }
         if (!quiet) {
           const lastRead = c.members.find(m => m.userId === user?.id)?.lastReadAt;
           setFirstUnreadId(c.unreadCount > 0 ? result.messages.find(m => m.senderId !== user?.id && (!lastRead || m.createdAt > lastRead))?.id || null : null);
@@ -203,20 +227,43 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
         if (activeId.current === id) setLoading(false);
       }
     },
-    [id],
+    [id, workspace],
   );
   useEffect(() => {
-    setMessages([]); setAtBottom(true); setFirstUnreadId(null);
+    setMessages([]); setAtBottom(workspace.reading.get(id || "")?.atBottom ?? true); setFirstUnreadId(null); setNewMessages(false);
     setContextView(false); setSelecting(false); setForwardIds([]); setForwardOpen(false);
     setConversation(null);
     setDraft(id ? queue(id).text : "");
-    setReply(null);
+    const failed = outbox.current.find(item => item.conversationId === id && item.error);
+    setReply(failed && restoredDraft.current.has(id || '') ? failed.reply : null);
     setTyping({});
     setInfoOpen(false);
     void load();
   }, [load]);
+  useLayoutEffect(() => {
+    const box = scroll.current, saved = restorePosition.current;
+    if (loading || !box || !saved) return;
+    const target = Array.from(box.querySelectorAll<HTMLElement>('[data-message-anchor]')).find(row => row.id === `message-${saved.anchorId}`);
+    if (target) box.scrollTop += target.getBoundingClientRect().top - box.getBoundingClientRect().top - saved.offset;
+    restorePosition.current = null;
+  }, [loading, messages]);
   useEffect(() => {
-    if (id && sync > 0) void load(true);
+    const box = scroll.current;
+    if (!box || !id || loading) return;
+    const remember = () => {
+      const top = box.getBoundingClientRect().top;
+      const anchor = Array.from(box.querySelectorAll<HTMLElement>('[data-message-anchor]')).find(row => row.getBoundingClientRect().bottom > top);
+      workspace.reading.set(id, { atBottom: followBottom.current, anchorId: anchor?.id.slice(8), offset: anchor ? anchor.getBoundingClientRect().top - top : 0 });
+      if (workspace.reading.size > 100) workspace.reading.delete(workspace.reading.keys().next().value!);
+    };
+    box.addEventListener('scroll', remember, { passive: true });
+    return () => { box.removeEventListener('scroll', remember); };
+  }, [id, loading, workspace]);
+  const previousSync = useRef(sync);
+  useEffect(() => {
+    const reconnected = sync !== previousSync.current;
+    previousSync.current = sync;
+    if (id && reconnected) void load(true);
   }, [sync, id, load]);
   useEffect(() => {
     const updated = conversations.find((c) => c.id === id);
@@ -240,6 +287,7 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
     if (!socket || !id) return;
     const onMessage = (message: Message) => {
       if (message.conversationId !== id) return;
+      if (message.senderId !== user!.id && !followBottom.current) setNewMessages(true);
       if (message.senderId === user!.id && message.clientId) acceptedIds.current.add(message.clientId);
       setMessages((old) =>
         old.some((m) => m.id === message.id) ? old : old.concat(message),
@@ -325,7 +373,13 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        if (scroll.current === box && followBottom.current) box.scrollTop = box.scrollHeight;
+        if (scroll.current !== box) return;
+        if (followBottom.current) box.scrollTop = box.scrollHeight;
+        else {
+          const saved = workspace.reading.get(id || '');
+          const target = saved?.anchorId ? box.querySelector<HTMLElement>(`[data-message-anchor][id="message-${CSS.escape(saved.anchorId)}"]`) : null;
+          if (saved && target) box.scrollTop += target.getBoundingClientRect().top - box.getBoundingClientRect().top - saved.offset;
+        }
       });
     };
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(preserveLatest);
@@ -438,29 +492,33 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
   }
   async function drainOutbox() {
     if (sendLock.current || !outbox.current.length) return;
-    sendLock.current = true; setSending(true);
+    sendLock.current = true; workspace.publish();
     try {
-      while (outbox.current.length && alive.current) {
+      while (outbox.current.length && workspace.active) {
         const item = outbox.current[0]!, targetId = item.conversationId, pending = item.pending;
-        item.error = null; renderDraft(v => v + 1);
+        item.error = null; workspace.publish();
         try {
-          setUploading(!!pending.items.length);
+          workspace.upload.active = !!pending.items.length; workspace.publish();
           const attachmentIds = await pending.upload(chosen => {
-            if (activeId.current === targetId) { setUploadName(chosen.name); setUploadProgress(0); }
-            return uploadFile<Attachment>(chosen, progress => { if (alive.current && activeId.current === targetId) setUploadProgress(progress); }, targetId);
+            if (!workspace.active) throw new DOMException('Aborted', 'AbortError');
+            workspace.upload.name = chosen.name; workspace.upload.progress = 0; workspace.publish();
+            return uploadFile<Attachment>(chosen, progress => { workspace.upload.progress = progress; workspace.publish(); }, targetId);
           });
-          setUploading(false);
+          workspace.upload.active = false; workspace.publish();
+          if (!workspace.active) break;
           const result = await api<Message>(`/conversations/${targetId}/messages`, json('POST', pending.prepare(pending.text.trim(), attachmentIds, item.reply?.id)));
+          if (!workspace.active) break;
           acceptedIds.current.add(result.clientId || pending.clientId);
           outbox.current.shift();
           // Acknowledgements never write to the independently editable draft.
-          pending.clear();
+          pending.clear(); workspace.publish(result);
           if (alive.current && activeId.current === targetId) {
             setMessages(old => old.some(m => m.id === result.id) ? old : old.concat(result));
             renderDraft(v => v + 1);
           }
           if (alive.current) void refresh().catch(error => toast((error as Error).message, true));
         } catch (error) {
+          if (!workspace.active) break;
           // A Socket receipt can confirm delivery before an HTTP response is lost.
           if (acceptedIds.current.has(pending.delivery?.clientId || pending.clientId)) { outbox.current.shift(); pending.clear(); continue; }
           item.error = error instanceof Error ? error.message : tr('screen408');
@@ -475,14 +533,13 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
             restoredDraft.current.set(targetId, {key:item.key,text:pending.text});
             if (alive.current && activeId.current === targetId) { setDraft(restored.text); setReply(item.reply); }
           }
-          if (alive.current) renderDraft(v => v + 1);
+          workspace.publish();
           break;
         }
       }
     } finally {
       sendLock.current = false;
-      if (alive.current) { setSending(false); setUploading(false); renderDraft(v => v + 1); }
-      else { outbox.current.forEach(item => item.pending.clear()); outbox.current = []; }
+      workspace.upload.active = false; workspace.publish();
     }
   }
   function send(e?: FormEvent) {
@@ -604,7 +661,7 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
         </header>
         {!!conversation.unreadAnnouncements && conversation.type === 'GROUP' && <Link className="announcement-banner" to={`/groups/${id}#announcements`}>{t('unreadAnnouncements', {count: conversation.unreadAnnouncements})}</Link>}
         {conversation.mute && !writable && <p className="mute-banner" role="status">{tr('uiMuted')}</p>}
-        {contextView && <button className="btn btn-secondary" onClick={() => { setContextView(false); void load(); }}>{t("backLatest")}</button>}
+        {contextView && <button className="btn btn-secondary" onClick={() => { setContextView(false); if (id) workspace.reading.delete(id); void load(); }}>{t("backLatest")}</button>}
         {selecting && <button type="button" className="btn btn-primary" disabled={!forwardIds.length} onClick={() => setForwardOpen(true)}>{t("forwardCount", { count: forwardIds.length })}</button>}
         <div
           className="messages-scroll"
@@ -612,7 +669,7 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
           onScroll={() => {
             if (viewportChanging.current) return;
             const box = scroll.current;
-            if (box) { followBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 160; setAtBottom(followBottom.current); }
+            if (box) { followBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 160; setAtBottom(followBottom.current); if (followBottom.current) setNewMessages(false); }
             if (
               scroll.current &&
               scroll.current.scrollTop < 60 &&
@@ -645,7 +702,7 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
                   new Date(previous.createdAt).toDateString() !==
                     new Date(m.createdAt).toDateString();
               return (
-                <div key={m.id} id={`message-${m.id}`} className={continuesMessageGroup(previous, m, m.id === firstUnreadId) ? "message-continuation" : "message-group-start"}>
+                <div key={m.id} data-message-anchor id={`message-${m.id}`} className={continuesMessageGroup(previous, m, m.id === firstUnreadId) ? "message-continuation" : "message-group-start"}>
                   {selecting && !m.retractedAt && <label className="forward-select"><input type="checkbox" checked={forwardIds.includes(m.id)} disabled={!forwardIds.includes(m.id) && forwardIds.length >= 20} onChange={e => setForwardIds(old => e.target.checked ? [...old, m.id] : old.filter(id => id !== m.id))} />{t("forwardSelected")}</label>}
                   {showDate && (
                     <div className="date-divider">
@@ -724,7 +781,7 @@ export function ChatPage({sendLabel,compactHeader=false}:{sendLabel?:string;comp
           ))}
           <div ref={end} />
         </div>
-        {!atBottom && !contextView && <button type="button" className="btn btn-secondary jump-latest" onClick={() => { followBottom.current = true; setAtBottom(true); scrollBottom(); }}><ChevronDown size={16} />{t("backLatest")}</button>}
+        {!atBottom && !contextView && <button type="button" className="btn btn-secondary jump-latest" onClick={() => { followBottom.current = true; setAtBottom(true); setNewMessages(false); scrollBottom(); }}><ChevronDown size={16} />{newMessages ? tr("uiNewMessages") : t("backLatest")}</button>}
         <div className="typing-indicator" aria-live="polite">
           {selectedTyping.length > 0 && (
             <>
@@ -995,8 +1052,9 @@ function MessageRow({
 }) {
   useLanguage();
   const t = useSoundText();
-  const [menu, setMenu] = useState(false),
+  const [menu, setMenu] = useState(false), [copied, setCopied] = useState(false),
     { toast } = useApp();
+  useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(false), 1600); return () => clearTimeout(timer); }, [copied]);
   const preciseTime = new Date(m.createdAt).toLocaleString(getLanguage(), {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const peers = conversation.members.filter((v) => v.userId !== m.senderId),
     read =
@@ -1017,7 +1075,9 @@ function MessageRow({
       </div>
     );
   return (
-    <article className={`message-row ${own ? "own" : ""} ${grouped ? "grouped" : ""}`} aria-label={m.sender?.displayName || tr('genericUser')}>
+    <article className={`message-row ${own ? "own" : ""} ${grouped ? "grouped" : ""}`} tabIndex={0} aria-label={m.sender?.displayName || tr('genericUser')} aria-description={tr('uiMessageActionsHint')}
+      onClick={e => { if (!(e.target as HTMLElement).closest('button,a,input,textarea') && window.getSelection()?.isCollapsed !== false) e.currentTarget.focus({preventScroll:true}); }}
+      onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) { e.preventDefault(); setMenu(true); } }}>
       {!grouped && (m.sender?.role==='GUEST' ? <span className="message-avatar"><Avatar user={m.sender} size="sm" /></span> : <Link className="message-avatar" to={`/profile/${m.senderId}`} aria-label={tr('screen501', {v0:m.sender?.displayName||tr('genericUser')})}><Avatar user={m.sender} size="sm" /></Link>)}
       <div className="message-column">
         {!grouped && <div className="message-meta">
@@ -1080,8 +1140,9 @@ function MessageRow({
         >
           <MoreHorizontal size={18} />
         </button>
+      </div>
         {menu && (
-          <div className="message-menu" role="group" aria-label={tr('screen508')} onKeyDown={e => { if (e.key === "Escape") setMenu(false); }}>
+          <Dialog title={tr('screen508')} className="message-actions-dialog" onClose={() => setMenu(false)}><div className="message-menu" role="group" aria-label={tr('screen508')} onKeyDown={e => { if (e.key === "Escape") setMenu(false); }}>
             <time className="message-menu-time" dateTime={m.createdAt}>{preciseTime}</time>
             {own && <span className="message-menu-time">{read ? tr('screen506') : delivered ? tr('screen504') : tr('screen505')}</span>}
             <button className="message-reply-mobile" onClick={() => { setMenu(false); onReply(); }}><Reply size={14} />{tr('screen507')}</button>
@@ -1089,18 +1150,16 @@ function MessageRow({
             <ReportButton targetType="MESSAGE" targetId={m.id} />
             <button
               onClick={() => {
-                setMenu(false);
                 const copy = navigator.clipboard?.writeText(m.id);
                 if (copy)
                   void copy
-                    .then(() => toast(tr('screen509')))
+                    .then(() => setCopied(true))
                     .catch(() => toast(tr('screen510', {v0: m.id})));
                 else toast(tr('screen510', {v0: m.id}));
               }}
             >
-              <Copy size={14} />
-              {tr('screen511')}</button>
-            {!own&&conversation.permissions?.manageMessages&&<button onClick={()=>{setMenu(false);onRetract();}}><Trash2 size={14}/>{tr('screen513')}</button>}
+              {copied ? <Check size={14}/> : <Copy size={14} />}
+              {tr(copied ? 'screen509' : 'screen511')}</button>
             {!own && conversation.permissions?.manageMessages && <button onClick={()=>{setMenu(false);onRetract();}}><Trash2 size={14}/>{tr('screen513')}</button>}
             {own && (
               <>
@@ -1130,9 +1189,8 @@ function MessageRow({
             >
               <Trash2 size={14} />
               {tr('screen514')}</button>
-          </div>
+          </div></Dialog>
         )}
-      </div>
     </article>
   );
 }

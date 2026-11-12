@@ -174,7 +174,13 @@ export function Dialog({
       if (event.key === 'Escape' && panels[panels.length - 1] === panel) { event.preventDefault(); event.stopPropagation(); closeHandler.current(); }
     };
     document.addEventListener('keydown', escape, true);
-    return () => { document.removeEventListener('keydown', escape, true); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
+    return () => {
+      document.removeEventListener('keydown', escape, true);
+      // An action such as Reply may deliberately focus the composer before closing.
+      // Restore the trigger only if focus has not already moved to another control.
+      const current = document.activeElement;
+      if (previous?.isConnected && (!current || current === document.body || panel?.contains(current))) previous.focus({ preventScroll: true });
+    };
   }, []);
   return (
     <div
@@ -190,21 +196,17 @@ export function Dialog({
         aria-modal="true"
         aria-label={title}
         onKeyDown={(e) => {
-          if (e.key === "Tab") {
-            const items = [
-              ...dialog.current!.querySelectorAll<HTMLElement>(
-                'a[href],button:not([disabled]),input:not([disabled]):not([hidden]),textarea:not([disabled]),select:not([disabled]),[tabindex="0"]',
-              ),
-            ].filter((v) => v.offsetParent !== null);
-            const first = items[0],
-              last = items.at(-1);
-            if (e.shiftKey && document.activeElement === first) {
-              e.preventDefault();
-              last?.focus();
-            } else if (!e.shiftKey && document.activeElement === last) {
-              e.preventDefault();
-              first?.focus();
-            }
+          if (e.key === "Tab" && (e.target as Element).closest('[role="dialog"]') === dialog.current) {
+            const items = [...dialog.current!.querySelectorAll<HTMLElement>(
+              'a[href],button:not([disabled]),input:not([disabled]):not([hidden]),textarea:not([disabled]),select:not([disabled]),summary,[tabindex="0"]',
+            )].filter(element => element.offsetParent !== null && element.tabIndex >= 0);
+            // Safari may skip buttons in its default Tab order. Own each step,
+            // including Shift+Tab, so it cannot enter the composer behind a modal.
+            e.preventDefault(); e.stopPropagation();
+            if (!items.length) return;
+            const current = items.indexOf(document.activeElement as HTMLElement);
+            const next = current < 0 ? (e.shiftKey ? items.length - 1 : 0) : (current + (e.shiftKey ? -1 : 1) + items.length) % items.length;
+            items[next]!.focus({ preventScroll: true });
           }
         }}
       >

@@ -11,7 +11,9 @@
     "uiPendingMessage": "待发送消息",
     "uiSendFailed": "发送失败 · 重试",
     "uiSending": "正在发送…",
-    "uiComposerMore": "表情和附件说明"
+    "uiComposerMore": "表情和附件说明",
+    "uiMessageActionsHint": "点按消息显示操作，按回车打开菜单",
+    "uiNewMessages": "有新消息"
   },
   "en": {
     "uiInfoFiles": "Shared files",
@@ -25,6 +27,8 @@
     "uiPendingMessage": "Pending message",
     "uiSendFailed": "Couldn't send. Retry",
     "uiSending": "Sending…",
-    "uiComposerMore": "Emoji and attachment help"
+    "uiComposerMore": "Emoji and attachment help",
+    "uiMessageActionsHint": "Select the message to show actions. Press Enter to open the menu.",
+    "uiNewMessages": "New messages"
   }
 }

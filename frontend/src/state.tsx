@@ -1,3 +1,4 @@
+import { chatWorkspaceFor, clearChatWorkspace } from './chat-workspace';
 import { localizeApiError } from './i18n';
 import { useAppearance, useAppearanceRuntime, updateAppearance } from './appearance-store';
 import { translate as tr, useLanguage } from './i18n';
@@ -71,6 +72,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     timer.current = setTimeout(() => setNotice(null), 5000);
   }, []);
   const login = useCallback((next: User, token: string) => {
+    chatWorkspaceFor(next.id);
     authUserId.current = next.id;
     setCsrf(token);
     setToken(token);
@@ -122,6 +124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         e.status === 401 &&
         authUserId.current === user.id
       ) {
+        clearChatWorkspace();
         authUserId.current = null;
         setCsrf("");
         setToken("");
@@ -142,6 +145,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 401)) throw e;
     }
+    clearChatWorkspace();
     authUserId.current = null;
     deliveredIds.current.clear();
     setCsrf("");
